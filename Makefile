@@ -6,6 +6,10 @@ APP_VERSION = 0.1.0
 DOCKER_IMAGE = $(APP_NAME):$(APP_VERSION)
 DOCKER_IMAGE_LATEST = $(APP_NAME):latest
 
+# Git 信息
+GIT_COMMIT = $(shell git rev-parse --short HEAD)
+BUILD_TIME = $(shell date -u '+%Y-%m-%d_%H:%M:%S')
+
 GO_FILES = $(shell find . -name "*.go" -type f -not -path "./vendor/*")
 BUILD_DIR = build
 BINARY = $(BUILD_DIR)/$(APP_NAME)
@@ -17,7 +21,7 @@ all: clean build
 build: ui-build
 	@echo "==> 构建 Go 后端..."
 	@mkdir -p $(BUILD_DIR)
-	@go build -o $(BINARY) ./cmd/server
+	@go build -ldflags "-X main.Version=$(APP_VERSION) -X main.GitCommit=$(GIT_COMMIT) -X main.BuildTime=$(BUILD_TIME)" -o $(BINARY) ./cmd/server
 
 # 清理构建产物
 clean:
@@ -39,7 +43,11 @@ run: docker-build
 # 构建Docker镜像
 docker-build:
 	@echo "==> 构建 Docker 镜像..."
-	@docker build -t $(DOCKER_IMAGE) .
+	@docker build \
+		--build-arg VERSION=$(APP_VERSION) \
+		--build-arg GIT_COMMIT=$(GIT_COMMIT) \
+		--build-arg BUILD_TIME=$(BUILD_TIME) \
+		-t $(DOCKER_IMAGE) .
 	@docker tag $(DOCKER_IMAGE) $(DOCKER_IMAGE_LATEST)
 	@echo "==> 构建镜像完成: $(DOCKER_IMAGE)"
 

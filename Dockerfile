@@ -8,12 +8,18 @@ RUN npm run build
 
 FROM golang:1.24-alpine AS backend-builder
 
+ARG VERSION=0.1.0
+ARG GIT_COMMIT
+ARG BUILD_TIME
+
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=ui-builder /app/ui/dist /app/ui/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o crds-objects-browser ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo \
+    -ldflags "-X main.Version=${VERSION} -X main.GitCommit=${GIT_COMMIT} -X main.BuildTime=${BUILD_TIME}" \
+    -o crds-objects-browser ./cmd/server
 
 FROM alpine:3.19
 
