@@ -47,6 +47,8 @@ type Client struct {
 	objectsStore     map[schema.GroupVersionResource]map[string][]unstructured.Unstructured
 	objectsStoreLock sync.RWMutex
 	stopChan         chan struct{}
+	resyncPeriod     time.Duration
+	watchBufferSize  int
 }
 
 // NewClient 创建新的Kubernetes客户端
@@ -67,6 +69,11 @@ func NewClient(kubeconfig string) (*Client, error) {
 			return nil, fmt.Errorf("error creating in-cluster config: %v", err)
 		}
 	}
+
+	// 配置客户端参数
+	config.QPS = 50
+	config.Burst = 100
+	config.Timeout = 30 * time.Second
 
 	// 配置 TLS
 	config.TLSClientConfig.Insecure = true
@@ -91,6 +98,8 @@ func NewClient(kubeconfig string) (*Client, error) {
 		informers:       make(map[schema.GroupVersionResource]cache.SharedIndexInformer),
 		objectsStore:    make(map[schema.GroupVersionResource]map[string][]unstructured.Unstructured),
 		stopChan:        make(chan struct{}),
+		resyncPeriod:    time.Hour * 12, // 降低同步频率
+		watchBufferSize: 1024,           // 设置合理的缓冲区大小
 	}
 
 	// 初始化CRD资源并启动informers
@@ -126,12 +135,31 @@ func (c *Client) initResources() {
 				// 创建新的informer
 				factory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(
 					c.dynamicClient,
-					time.Hour*24,
+					c.resyncPeriod,
 					"",
 					nil,
 				)
 
 				informer := factory.ForResource(gvr).Informer()
+
+				// 配置informer选项
+				informer.SetWatchErrorHandler(func(r *cache.Reflector, err error) {
+					if err != nil {
+						fmt.Printf("Watch error for %v: %v\n", gvr, err)
+					}
+				})
+
+				informer.SetTransform(func(obj interface{}) (interface{}, error) {
+					// 过滤和转换对象，减少内存使用
+					if u, ok := obj.(*unstructured.Unstructured); ok {
+						filtered := u.DeepCopy()
+						// 只保留必要的字段
+						filtered.SetManagedFields(nil)
+						filtered.SetAnnotations(nil)
+						return filtered, nil
+					}
+					return obj, nil
+				})
 
 				// 设置事件处理程序
 				informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -155,8 +183,39 @@ func (c *Client) initResources() {
 			}
 		}
 
-		// 10分钟检查一次新的CRDs
-		time.Sleep(10 * time.Minute)
+		// 清理不再需要的informers
+		c.cleanupUnusedInformers(crds)
+
+		// 30分钟检查一次新的CRDs
+		time.Sleep(30 * time.Minute)
+	}
+}
+
+// cleanupUnusedInformers 清理不再需要的informers
+func (c *Client) cleanupUnusedInformers(currentCRDs []CRDResource) {
+	c.informersLock.Lock()
+	defer c.informersLock.Unlock()
+
+	c.objectsStoreLock.Lock()
+	defer c.objectsStoreLock.Unlock()
+
+	// 创建当前CRD的映射
+	crdMap := make(map[schema.GroupVersionResource]bool)
+	for _, crd := range currentCRDs {
+		gvr := schema.GroupVersionResource{
+			Group:    crd.Group,
+			Version:  crd.Version,
+			Resource: crd.Name,
+		}
+		crdMap[gvr] = true
+	}
+
+	// 清理不再存在的informers和存储
+	for gvr := range c.informers {
+		if !crdMap[gvr] {
+			delete(c.informers, gvr)
+			delete(c.objectsStore, gvr)
+		}
 	}
 }
 
@@ -338,6 +397,10 @@ func isSpecialResource(name, group string) bool {
 		},
 		"authentication.k8s.io": {
 			"tokenreviews",
+		},
+		"metrics.k8s.io": {
+			"pods",
+			"nodes",
 		},
 	}
 
