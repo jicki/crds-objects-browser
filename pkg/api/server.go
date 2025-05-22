@@ -88,7 +88,7 @@ func (s *Server) registerRoutes() {
 
 	// 处理根路径
 	s.router.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, "/ui/index.html")
+		c.Redirect(http.StatusMovedPermanently, "/ui/")
 	})
 
 	// 处理 favicon.ico
@@ -105,13 +105,19 @@ func (s *Server) registerRoutes() {
 
 		// 如果是以 /ui 开头的路径
 		if strings.HasPrefix(path, "/ui/") {
-			// 尝试提供静态文件
+			// 先尝试作为静态资源文件提供服务
 			filePath := "./ui/dist" + strings.TrimPrefix(path, "/ui")
 			if _, err := os.Stat(filePath); err == nil {
+				// 设置缓存控制头
+				c.Header("Cache-Control", "public, max-age=31536000")
 				c.File(filePath)
 				return
 			}
-			// 如果文件不存在，返回 index.html（用于支持前端路由）
+
+			// 如果不是静态资源，返回 index.html（用于支持前端路由）
+			c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
+			c.Header("Pragma", "no-cache")
+			c.Header("Expires", "0")
 			c.File("./ui/dist/index.html")
 			return
 		}
