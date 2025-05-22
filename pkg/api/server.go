@@ -86,17 +86,9 @@ func (s *Server) registerRoutes() {
 		api.GET("/crds/:group/:version/:resource/objects", s.GetCRDObjects)
 	}
 
-	// 静态文件服务
-	s.router.Static("/ui", "./ui/dist")
-
 	// 处理根路径
 	s.router.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusMovedPermanently, "/ui/")
-	})
-
-	// 处理 /ui/ 路径
-	s.router.GET("/ui/", func(c *gin.Context) {
-		c.File("./ui/dist/index.html")
+		c.Redirect(http.StatusMovedPermanently, "/ui/index.html")
 	})
 
 	// 处理 favicon.ico
@@ -104,19 +96,26 @@ func (s *Server) registerRoutes() {
 		c.File("./ui/dist/favicon.ico")
 	})
 
-	// 处理其他未匹配的路由
+	// 静态文件服务
+	s.router.Static("/ui", "./ui/dist")
+
+	// 处理前端路由
 	s.router.NoRoute(func(c *gin.Context) {
 		path := c.Request.URL.Path
-		// 如果是以 /ui/ 开头的路径，尝试提供静态文件
+
+		// 如果是以 /ui 开头的路径
 		if strings.HasPrefix(path, "/ui/") {
-			if _, err := os.Stat("./ui/dist" + strings.TrimPrefix(path, "/ui")); err == nil {
-				c.File("./ui/dist" + strings.TrimPrefix(path, "/ui"))
+			// 尝试提供静态文件
+			filePath := "./ui/dist" + strings.TrimPrefix(path, "/ui")
+			if _, err := os.Stat(filePath); err == nil {
+				c.File(filePath)
 				return
 			}
-			// 如果文件不存在，返回 index.html
+			// 如果文件不存在，返回 index.html（用于支持前端路由）
 			c.File("./ui/dist/index.html")
 			return
 		}
+
 		// 其他路径返回 404
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "Page not found",
