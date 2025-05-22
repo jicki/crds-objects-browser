@@ -1,5 +1,5 @@
 # 构建前端
-FROM node:18-alpine as ui-builder
+FROM node:18-alpine AS ui-builder
 WORKDIR /app
 COPY ui/package*.json ./
 RUN npm install
@@ -7,7 +7,7 @@ COPY ui/ .
 RUN npm run build
 
 # 构建后端
-FROM golang:1.21-alpine as go-builder
+FROM golang:1.21-alpine AS go-builder
 WORKDIR /app
 COPY go.* ./
 RUN go mod download
