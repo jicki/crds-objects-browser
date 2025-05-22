@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -86,8 +88,40 @@ func (s *Server) registerRoutes() {
 
 	// 静态文件服务
 	s.router.Static("/ui", "./ui/dist")
-	s.router.NoRoute(func(c *gin.Context) {
+
+	// 处理根路径
+	s.router.GET("/", func(c *gin.Context) {
+		c.Redirect(http.StatusMovedPermanently, "/ui/")
+	})
+
+	// 处理 /ui/ 路径
+	s.router.GET("/ui/", func(c *gin.Context) {
 		c.File("./ui/dist/index.html")
+	})
+
+	// 处理 favicon.ico
+	s.router.GET("/favicon.ico", func(c *gin.Context) {
+		c.File("./ui/dist/favicon.ico")
+	})
+
+	// 处理其他未匹配的路由
+	s.router.NoRoute(func(c *gin.Context) {
+		path := c.Request.URL.Path
+		// 如果是以 /ui/ 开头的路径，尝试提供静态文件
+		if strings.HasPrefix(path, "/ui/") {
+			if _, err := os.Stat("./ui/dist" + strings.TrimPrefix(path, "/ui")); err == nil {
+				c.File("./ui/dist" + strings.TrimPrefix(path, "/ui"))
+				return
+			}
+			// 如果文件不存在，返回 index.html
+			c.File("./ui/dist/index.html")
+			return
+		}
+		// 其他路径返回 404
+		c.JSON(http.StatusNotFound, gin.H{
+			"error": "Page not found",
+			"path":  path,
+		})
 	})
 }
 
