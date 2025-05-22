@@ -41,19 +41,24 @@ func NewServer(k8sClient *k8s.Client, port string) *Server {
 	return server
 }
 
+// Router 返回 gin 路由器
+func (s *Server) Router() *gin.Engine {
+	return s.router
+}
+
 // registerRoutes 注册API路由
 func (s *Server) registerRoutes() {
 	// 获取所有CRD资源
-	s.router.GET("/api/crds", s.getCRDs)
+	s.router.GET("/api/crds", s.GetCRDs)
 
 	// 获取所有命名空间
-	s.router.GET("/api/namespaces", s.getNamespaces)
+	s.router.GET("/api/namespaces", s.GetNamespaces)
 
 	// 获取指定CRD的所有对象
-	s.router.GET("/api/resources/:group/:version/:resource", s.getCRDObjects)
+	s.router.GET("/api/resources/:group/:version/:resource", s.GetCRDObjects)
 
 	// 获取指定CRD可用的所有命名空间
-	s.router.GET("/api/resources/:group/:version/:resource/namespaces", s.getAvailableNamespaces)
+	s.router.GET("/api/resources/:group/:version/:resource/namespaces", s.GetAvailableNamespaces)
 
 	// 静态文件服务
 	s.router.Static("/ui", "./ui/dist")
@@ -62,8 +67,8 @@ func (s *Server) registerRoutes() {
 	})
 }
 
-// getCRDs 处理获取所有CRD资源的请求
-func (s *Server) getCRDs(c *gin.Context) {
+// GetCRDs 处理获取所有CRD资源的请求
+func (s *Server) GetCRDs(c *gin.Context) {
 	crds, err := s.k8sClient.GetCRDs()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -73,8 +78,8 @@ func (s *Server) getCRDs(c *gin.Context) {
 	c.JSON(http.StatusOK, crds)
 }
 
-// getNamespaces 处理获取所有命名空间的请求
-func (s *Server) getNamespaces(c *gin.Context) {
+// GetNamespaces 处理获取所有命名空间的请求
+func (s *Server) GetNamespaces(c *gin.Context) {
 	namespaces, err := s.k8sClient.GetNamespaces()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -84,8 +89,8 @@ func (s *Server) getNamespaces(c *gin.Context) {
 	c.JSON(http.StatusOK, namespaces)
 }
 
-// getCRDObjects 处理获取指定CRD所有对象的请求
-func (s *Server) getCRDObjects(c *gin.Context) {
+// GetCRDObjects 处理获取指定CRD所有对象的请求
+func (s *Server) GetCRDObjects(c *gin.Context) {
 	group := c.Param("group")
 	version := c.Param("version")
 	resource := c.Param("resource")
@@ -100,8 +105,8 @@ func (s *Server) getCRDObjects(c *gin.Context) {
 	c.JSON(http.StatusOK, objects)
 }
 
-// getAvailableNamespaces 处理获取指定CRD可用的所有命名空间的请求
-func (s *Server) getAvailableNamespaces(c *gin.Context) {
+// GetAvailableNamespaces 处理获取指定CRD可用的所有命名空间的请求
+func (s *Server) GetAvailableNamespaces(c *gin.Context) {
 	group := c.Param("group")
 	version := c.Param("version")
 	resource := c.Param("resource")

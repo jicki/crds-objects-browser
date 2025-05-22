@@ -68,6 +68,11 @@ func NewClient(kubeconfig string) (*Client, error) {
 		}
 	}
 
+	// 配置 TLS
+	config.TLSClientConfig.Insecure = true
+	config.TLSClientConfig.CAData = nil
+	config.TLSClientConfig.CAFile = ""
+
 	// 创建动态客户端
 	dynamicClient, err := dynamic.NewForConfig(config)
 	if err != nil {
