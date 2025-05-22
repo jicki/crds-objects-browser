@@ -2,7 +2,7 @@
 
 # 变量定义
 APP_NAME = crds-objects-browser
-APP_VERSION = 0.1.0
+APP_VERSION = $(shell cat VERSION)
 DOCKER_IMAGE = $(APP_NAME):$(APP_VERSION)
 DOCKER_IMAGE_LATEST = $(APP_NAME):latest
 
@@ -16,6 +16,12 @@ BINARY = $(BUILD_DIR)/$(APP_NAME)
 
 # 默认目标
 all: clean build
+
+# 显示版本信息
+version:
+	@echo "Version: $(APP_VERSION)"
+	@echo "Git Commit: $(GIT_COMMIT)"
+	@echo "Build Time: $(BUILD_TIME)"
 
 # 构建项目
 build: ui-build
@@ -81,13 +87,14 @@ deps:
 # 显示帮助
 help:
 	@echo "可用命令:"
-	@echo "  make build          - 构建项目"
-	@echo "  make clean          - 清理构建产物"
-	@echo "  make test           - 运行测试"
-	@echo "  make run            - 本地运行服务"
-	@echo "  make docker-build   - 构建Docker镜像"
-	@echo "  make docker-run     - 运行Docker容器"
-	@echo "  make k8s-deploy     - 部署到Kubernetes"
-	@echo "  make ui-build       - 构建前端（已移至Docker中）"
-	@echo "  make ui-dev         - 启动前端开发服务"
-	@echo "  make deps           - 安装Go依赖" 
+	@echo "  make version       - 显示版本信息"
+	@echo "  make build         - 构建项目"
+	@echo "  make clean         - 清理构建产物"
+	@echo "  make test          - 运行测试"
+	@echo "  make run           - 本地运行服务"
+	@echo "  make docker-build  - 构建Docker镜像"
+	@echo "  make docker-run    - 运行Docker容器"
+	@echo "  make k8s-deploy    - 部署到Kubernetes"
+	@echo "  make ui-build      - 构建前端（已移至Docker中）"
+	@echo "  make ui-dev        - 启动前端开发服务"
+	@echo "  make deps          - 安装Go依赖" 
