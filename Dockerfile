@@ -1,4 +1,4 @@
-FROM node:16-alpine AS ui-builder
+FROM node:20-alpine AS ui-builder
 
 WORKDIR /app/ui
 COPY ui/package*.json ./
@@ -6,7 +6,7 @@ RUN npm install
 COPY ui ./
 RUN npm run build
 
-FROM golang:1.20-alpine AS backend-builder
+FROM golang:1.24-alpine AS backend-builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -15,7 +15,7 @@ COPY . .
 COPY --from=ui-builder /app/ui/dist /app/ui/dist
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o crds-objects-browser ./cmd/server
 
-FROM alpine:3.17
+FROM alpine:3.19
 
 RUN apk --no-cache add ca-certificates
 WORKDIR /app
