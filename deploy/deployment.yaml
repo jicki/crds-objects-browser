@@ -16,7 +16,7 @@ spec:
       serviceAccount: crds-objects-browser
       containers:
       - name: browser
-        image: reg.deeproute.ai/deeproute-public/crds-objects-browser:0.1.5
+        image: crds-objects-browser:latest
         imagePullPolicy: Always
         ports:
         - containerPort: 8080
@@ -49,11 +49,11 @@ spec:
         env:
         - name: TZ
           value: Asia/Shanghai
-        volumeMounts:
-        - name: config
-          mountPath: /root/.kube
-          readOnly: true
-      volumes:
-      - name: config
-        configMap:
-          name: crds-objects-browser-kubeconfig 
+      #   volumeMounts:
+      #   - name: config
+      #     mountPath: /root/.kube
+      #     readOnly: true
+      # volumes:
+      # - name: config
+      #   configMap:
+      #     name: crds-objects-browser-kubeconfig 

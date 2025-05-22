@@ -30,9 +30,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: crds-objects-browser
-  namespace: default
-  labels:
-    app: crds-objects-browser
+  namespace: kube-system
 spec:
   replicas: 1
   selector:
@@ -43,32 +41,50 @@ spec:
       labels:
         app: crds-objects-browser
     spec:
-      serviceAccountName: crds-objects-browser
+      serviceAccount: crds-objects-browser
       containers:
-      - name: crds-objects-browser
+      - name: browser
         image: crds-objects-browser:latest
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
+          name: http
         resources:
-          limits:
-            memory: "512Mi"
-            cpu: "500m"
           requests:
-            memory: "256Mi"
-            cpu: "100m"
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
         livenessProbe:
           httpGet:
-            path: /ui
-            port: 8080
+            path: /healthz
+            port: http
           initialDelaySeconds: 10
           periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /ui
-            port: 8080
+            path: /readyz
+            port: http
           initialDelaySeconds: 5
-          periodSeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        env:
+        - name: TZ
+          value: Asia/Shanghai
+      #   volumeMounts:
+      #   - name: config
+      #     mountPath: /root/.kube
+      #     readOnly: true
+      # volumes:
+      # - name: config
+      #   configMap:
+      #     name: crds-objects-browser-kubeconfig 
 ---
 apiVersion: v1
 kind: Service
