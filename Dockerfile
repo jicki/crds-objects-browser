@@ -15,7 +15,7 @@ COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -o browser cmd/server/main.go
 
 # 最终镜像
-FROM alpine:3.18
+FROM alpine:3.19
 WORKDIR /app
 COPY --from=go-builder /app/browser .
 COPY --from=ui-builder /app/dist ./ui/dist
