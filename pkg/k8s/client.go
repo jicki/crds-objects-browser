@@ -54,17 +54,17 @@ func NewClient(kubeconfig string) (*Client, error) {
 	var config *rest.Config
 	var err error
 
-	if kubeconfig == "" {
-		// 使用集群内配置
-		config, err = rest.InClusterConfig()
-		if err != nil {
+	// 首先尝试使用集群内配置
+	config, err = rest.InClusterConfig()
+	if err != nil {
+		// 如果集群内配置失败，并且提供了 kubeconfig，则使用 kubeconfig
+		if kubeconfig != "" {
+			config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
+			if err != nil {
+				return nil, fmt.Errorf("error building kubeconfig: %v", err)
+			}
+		} else {
 			return nil, fmt.Errorf("error creating in-cluster config: %v", err)
-		}
-	} else {
-		// 使用提供的kubeconfig
-		config, err = clientcmd.BuildConfigFromFlags("", kubeconfig)
-		if err != nil {
-			return nil, fmt.Errorf("error building kubeconfig: %v", err)
 		}
 	}
 

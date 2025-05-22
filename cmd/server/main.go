@@ -40,7 +40,7 @@ func main() {
 	)
 
 	// 获取默认的 kubeconfig 路径
-	if home := os.Getenv("HOME"); home != "" {
+	if home := os.Getenv("HOME"); home != "" && os.Getenv("KUBERNETES_SERVICE_HOST") == "" {
 		kubeconfig = filepath.Join(home, ".kube", "config")
 	}
 
