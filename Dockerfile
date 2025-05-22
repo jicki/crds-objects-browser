@@ -22,5 +22,8 @@ WORKDIR /app
 COPY --from=backend-builder /app/crds-objects-browser .
 COPY --from=ui-builder /app/ui/dist ./ui/dist
 
+ENV KLOG_V=0
+ENV KLOG_LOGTOSTDERR=true
+
 EXPOSE 8080
 ENTRYPOINT ["/app/crds-objects-browser"] 

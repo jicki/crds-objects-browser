@@ -51,6 +51,7 @@ docker-run: docker-build
 # 部署到Kubernetes
 k8s-deploy: docker-build
 	@echo "==> 部署到 Kubernetes..."
+	@kubectl apply -f deploy/rbac.yaml
 	@kubectl apply -f deploy/kubernetes.yaml
 	@echo "==> 部署完成"
 
