@@ -2,7 +2,7 @@ import { createStore } from 'vuex'
 import axios from 'axios'
 
 // API基础URL
-const API_URL = '/api'
+const API_URL = window.location.origin + '/api'
 
 export default createStore({
   state: {
@@ -56,12 +56,17 @@ export default createStore({
     // 获取所有CRD资源
     async fetchResources({ commit }) {
       commit('setLoading', true)
+      commit('setError', null)
       try {
         const response = await axios.get(`${API_URL}/crds`)
-        commit('setResources', response.data)
+        if (response.data) {
+          commit('setResources', response.data)
+        } else {
+          throw new Error('No data received')
+        }
       } catch (error) {
         console.error('Failed to fetch resources:', error)
-        commit('setError', 'Failed to fetch resources')
+        commit('setError', '获取资源列表失败：' + (error.response?.data?.error || error.message))
       } finally {
         commit('setLoading', false)
       }
@@ -70,12 +75,17 @@ export default createStore({
     // 获取所有命名空间
     async fetchNamespaces({ commit }) {
       commit('setLoading', true)
+      commit('setError', null)
       try {
         const response = await axios.get(`${API_URL}/namespaces`)
-        commit('setNamespaces', response.data)
+        if (response.data) {
+          commit('setNamespaces', response.data)
+        } else {
+          throw new Error('No data received')
+        }
       } catch (error) {
         console.error('Failed to fetch namespaces:', error)
-        commit('setError', 'Failed to fetch namespaces')
+        commit('setError', '获取命名空间列表失败：' + (error.response?.data?.error || error.message))
       } finally {
         commit('setLoading', false)
       }
@@ -96,17 +106,18 @@ export default createStore({
       const namespace = state.currentNamespace
       
       commit('setLoading', true)
+      commit('setError', null)
       try {
-        let url = `${API_URL}/resources/${group}/${version}/${name}`
-        if (namespace && namespace !== 'all') {
-          url += `?namespace=${namespace}`
-        }
-        
+        const url = `${API_URL}/crds/${group}/${version}/${name}/objects${namespace !== 'all' ? `?namespace=${namespace}` : ''}`
         const response = await axios.get(url)
-        commit('setResourceObjects', response.data)
+        if (response.data) {
+          commit('setResourceObjects', response.data)
+        } else {
+          throw new Error('No data received')
+        }
       } catch (error) {
         console.error('Failed to fetch resource objects:', error)
-        commit('setError', 'Failed to fetch resource objects')
+        commit('setError', '获取资源对象失败：' + (error.response?.data?.error || error.message))
       } finally {
         commit('setLoading', false)
       }
@@ -119,13 +130,18 @@ export default createStore({
       const { group, version, name } = state.selectedResource
       
       commit('setLoading', true)
+      commit('setError', null)
       try {
-        const url = `${API_URL}/resources/${group}/${version}/${name}/namespaces`
+        const url = `${API_URL}/crds/${group}/${version}/${name}/namespaces`
         const response = await axios.get(url)
-        commit('setResourceNamespaces', response.data)
+        if (response.data) {
+          commit('setResourceNamespaces', response.data)
+        } else {
+          throw new Error('No data received')
+        }
       } catch (error) {
         console.error('Failed to fetch resource namespaces:', error)
-        commit('setError', 'Failed to fetch resource namespaces')
+        commit('setError', '获取资源命名空间失败：' + (error.response?.data?.error || error.message))
       } finally {
         commit('setLoading', false)
       }

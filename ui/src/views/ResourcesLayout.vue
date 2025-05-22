@@ -10,12 +10,23 @@
             <el-input
               v-model="searchQuery"
               placeholder="搜索资源类型"
-              prefix-icon="el-icon-search"
+              :prefix-icon="Search"
               clearable
             />
           </div>
           <div class="resources-list">
+            <el-alert
+              v-if="error"
+              :title="error"
+              type="error"
+              :closable="false"
+              show-icon
+              style="margin-bottom: 15px;"
+            />
+            <el-skeleton v-if="loading" :rows="6" animated />
+            <el-empty v-else-if="!resourcesTree.length" description="暂无资源" />
             <el-tree
+              v-else
               :data="resourcesTree"
               :props="defaultProps"
               @node-click="handleNodeClick"
@@ -41,6 +52,7 @@
 import { computed, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
+import { Search } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourcesLayout',
@@ -94,6 +106,8 @@ export default {
 
     // 从Store获取排序后的资源列表
     const sortedResources = computed(() => store.getters.sortedResources)
+    const loading = computed(() => store.state.loading)
+    const error = computed(() => store.state.error)
     
     // 监听资源列表变化，重建树形结构
     watch(sortedResources, (resources) => {
@@ -125,6 +139,9 @@ export default {
       searchQuery,
       resourcesTree,
       resourcesTreeRef,
+      loading,
+      error,
+      Search,
       defaultProps: {
         children: 'children',
         label: 'label'
@@ -182,5 +199,14 @@ export default {
 .el-main {
   padding: 20px;
   background-color: #fff;
+}
+
+:deep(.el-tree-node__content) {
+  height: 32px;
+}
+
+:deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background-color: #ecf5ff;
+  color: #409eff;
 }
 </style> 
