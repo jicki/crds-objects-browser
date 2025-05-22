@@ -1,0 +1,104 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: crds-objects-browser
+  namespace: default
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: crds-objects-browser
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: crds-objects-browser
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: crds-objects-browser
+subjects:
+- kind: ServiceAccount
+  name: crds-objects-browser
+  namespace: default
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crds-objects-browser
+  namespace: default
+  labels:
+    app: crds-objects-browser
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crds-objects-browser
+  template:
+    metadata:
+      labels:
+        app: crds-objects-browser
+    spec:
+      serviceAccountName: crds-objects-browser
+      containers:
+      - name: crds-objects-browser
+        image: crds-objects-browser:latest
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        resources:
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+        livenessProbe:
+          httpGet:
+            path: /ui
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ui
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: crds-objects-browser
+  namespace: default
+spec:
+  selector:
+    app: crds-objects-browser
+  ports:
+  - port: 80
+    targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: crds-objects-browser
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+  - host: crds-browser.example.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: crds-objects-browser
+            port:
+              number: 80 
