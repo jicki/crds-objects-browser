@@ -32,12 +32,12 @@ test:
 	@go test -v ./...
 
 # 本地运行服务
-run: ui-build
+run: docker-build
 	@echo "==> 启动服务器..."
-	@go run cmd/server/main.go
+	@docker run -p 8080:8080 -v $(HOME)/.kube/config:/root/.kube/config $(DOCKER_IMAGE_LATEST)
 
 # 构建Docker镜像
-docker-build: ui-build
+docker-build:
 	@echo "==> 构建 Docker 镜像..."
 	@docker build -t $(DOCKER_IMAGE) .
 	@docker tag $(DOCKER_IMAGE) $(DOCKER_IMAGE_LATEST)
@@ -54,17 +54,14 @@ k8s-deploy: docker-build
 	@kubectl apply -f deploy/kubernetes.yaml
 	@echo "==> 部署完成"
 
-# 构建前端
+# 构建前端（现在仅作为文档目的保留，实际构建在 Dockerfile 中进行）
 ui-build:
-	@echo "==> 构建 Vue 前端..."
-	@cd ui && npm install
-	@cd ui && npm run build
-	@echo "==> 前端构建完成"
+	@echo "==> 前端构建已移至 Dockerfile 中进行"
 
 # 启动前端开发服务
 ui-dev:
 	@echo "==> 启动前端开发服务器..."
-	@cd ui && npm run serve
+	@docker run --rm -it -v $(PWD)/ui:/app/ui -p 8080:8080 node:20-alpine sh -c "cd /app/ui && npm install && npm run serve"
 
 # 安装Go依赖
 deps:
@@ -82,6 +79,6 @@ help:
 	@echo "  make docker-build   - 构建Docker镜像"
 	@echo "  make docker-run     - 运行Docker容器"
 	@echo "  make k8s-deploy     - 部署到Kubernetes"
-	@echo "  make ui-build       - 构建前端"
+	@echo "  make ui-build       - 构建前端（已移至Docker中）"
 	@echo "  make ui-dev         - 启动前端开发服务"
 	@echo "  make deps           - 安装Go依赖" 
