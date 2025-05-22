@@ -10,9 +10,12 @@
             <el-input
               v-model="searchQuery"
               placeholder="搜索资源类型"
-              :prefix-icon="Search"
               clearable
-            />
+            >
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
           </div>
           <div class="resources-list">
             <el-alert
@@ -24,7 +27,11 @@
               style="margin-bottom: 15px;"
             />
             <el-skeleton v-if="loading" :rows="6" animated />
-            <el-empty v-else-if="!resourcesTree.length" description="暂无资源" />
+            <el-empty v-else-if="!resourcesTree.length" description="暂无资源">
+              <template #image>
+                <el-icon :size="60"><Box /></el-icon>
+              </template>
+            </el-empty>
             <el-tree
               v-else
               :data="resourcesTree"
@@ -35,7 +42,15 @@
               ref="resourcesTree"
               highlight-current
               default-expand-all
-            />
+            >
+              <template #default="{ node, data }">
+                <span class="custom-tree-node">
+                  <el-icon v-if="!data.resource"><Folder /></el-icon>
+                  <el-icon v-else><Document /></el-icon>
+                  <span>{{ node.label }}</span>
+                </span>
+              </template>
+            </el-tree>
           </div>
         </div>
       </el-aside>
@@ -52,10 +67,16 @@
 import { computed, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Box, Folder, Document } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourcesLayout',
+  components: {
+    Search,
+    Box,
+    Folder,
+    Document
+  },
   setup() {
     const store = useStore()
     const router = useRouter()
@@ -141,7 +162,6 @@ export default {
       resourcesTreeRef,
       loading,
       error,
-      Search,
       defaultProps: {
         children: 'children',
         label: 'label'
@@ -208,5 +228,18 @@ export default {
 :deep(.el-tree-node.is-current > .el-tree-node__content) {
   background-color: #ecf5ff;
   color: #409eff;
+}
+
+.custom-tree-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+:deep(.el-empty__image) {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #909399;
 }
 </style> 
