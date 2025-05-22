@@ -272,20 +272,35 @@ func (c *Client) handleDelete(gvr schema.GroupVersionResource) func(obj interfac
 func (c *Client) GetCRDs() ([]CRDResource, error) {
 	resources, err := c.discoveryClient.ServerPreferredResources()
 	if err != nil {
-		return nil, fmt.Errorf("error discovering preferred resources: %v", err)
+		// 处理部分错误，继续获取可用资源
+		if discovery.IsGroupDiscoveryFailedError(err) {
+			// 记录错误但继续处理可用的资源组
+			fmt.Printf("Warning: Some groups were not discoverable: %v\n", err)
+		} else {
+			return nil, fmt.Errorf("error discovering preferred resources: %v", err)
+		}
 	}
 
 	var crds []CRDResource
 
 	for _, list := range resources {
+		if list == nil || list.APIResources == nil {
+			continue
+		}
+
 		gv, err := schema.ParseGroupVersion(list.GroupVersion)
 		if err != nil {
 			continue
 		}
 
 		for _, r := range list.APIResources {
-			// 排除内置资源
-			if isInternalResource(r.Name, gv.Group) {
+			// 跳过不可列出或不可获取的资源
+			if !hasVerb(r, "list") || !hasVerb(r, "get") {
+				continue
+			}
+
+			// 排除内置资源和特殊资源
+			if isInternalResource(r.Name, gv.Group) || isSpecialResource(r.Name, gv.Group) {
 				continue
 			}
 
@@ -300,6 +315,40 @@ func (c *Client) GetCRDs() ([]CRDResource, error) {
 	}
 
 	return crds, nil
+}
+
+// hasVerb 检查资源是否支持特定操作
+func hasVerb(r metav1.APIResource, verb string) bool {
+	for _, v := range r.Verbs {
+		if v == verb {
+			return true
+		}
+	}
+	return false
+}
+
+// isSpecialResource 检查是否为特殊资源（需要排除的资源）
+func isSpecialResource(name, group string) bool {
+	specialResources := map[string][]string{
+		"authorization.k8s.io": {
+			"selfsubjectrulesreviews",
+			"subjectaccessreviews",
+			"localsubjectaccessreviews",
+			"selfsubjectaccessreviews",
+		},
+		"authentication.k8s.io": {
+			"tokenreviews",
+		},
+	}
+
+	if resources, ok := specialResources[group]; ok {
+		for _, r := range resources {
+			if r == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // 检查是否为内置资源
