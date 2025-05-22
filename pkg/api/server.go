@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"sync/atomic"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
@@ -12,10 +14,11 @@ import (
 
 // Server 表示API服务器
 type Server struct {
-	k8sClient *k8s.Client
-	router    *gin.Engine
-	httpSrv   *http.Server
-	port      string
+	k8sClient  *k8s.Client
+	router     *gin.Engine
+	httpServer *http.Server
+	port       string
+	isReady    atomic.Bool
 }
 
 // NewServer 创建新的API服务器
@@ -33,10 +36,20 @@ func NewServer(k8sClient *k8s.Client, port string) *Server {
 		k8sClient: k8sClient,
 		router:    router,
 		port:      port,
+		httpServer: &http.Server{
+			Addr:    fmt.Sprintf(":%s", port),
+			Handler: router,
+		},
 	}
 
 	// 注册路由
 	server.registerRoutes()
+
+	// 5秒后将 isReady 设置为 true
+	go func() {
+		time.Sleep(5 * time.Second)
+		server.isReady.Store(true)
+	}()
 
 	return server
 }
@@ -48,17 +61,28 @@ func (s *Server) Router() *gin.Engine {
 
 // registerRoutes 注册API路由
 func (s *Server) registerRoutes() {
-	// 获取所有CRD资源
-	s.router.GET("/api/crds", s.GetCRDs)
+	// 健康检查端点
+	s.router.GET("/healthz", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
 
-	// 获取所有命名空间
-	s.router.GET("/api/namespaces", s.GetNamespaces)
+	// 就绪检查端点
+	s.router.GET("/readyz", func(c *gin.Context) {
+		if s.isReady.Load() {
+			c.String(http.StatusOK, "ok")
+		} else {
+			c.String(http.StatusServiceUnavailable, "not ready")
+		}
+	})
 
-	// 获取指定CRD的所有对象
-	s.router.GET("/api/resources/:group/:version/:resource", s.GetCRDObjects)
-
-	// 获取指定CRD可用的所有命名空间
-	s.router.GET("/api/resources/:group/:version/:resource/namespaces", s.GetAvailableNamespaces)
+	// API 路由组
+	api := s.router.Group("/api")
+	{
+		api.GET("/crds", s.GetCRDs)
+		api.GET("/namespaces", s.GetNamespaces)
+		api.GET("/crds/:group/:version/:resource/namespaces", s.GetAvailableNamespaces)
+		api.GET("/crds/:group/:version/:resource/objects", s.GetCRDObjects)
+	}
 
 	// 静态文件服务
 	s.router.Static("/ui", "./ui/dist")
@@ -122,14 +146,10 @@ func (s *Server) GetAvailableNamespaces(c *gin.Context) {
 
 // Start 启动服务器
 func (s *Server) Start() error {
-	s.httpSrv = &http.Server{
-		Addr:    fmt.Sprintf(":%s", s.port),
-		Handler: s.router,
-	}
-	return s.httpSrv.ListenAndServe()
+	return s.httpServer.ListenAndServe()
 }
 
 // Shutdown 关闭服务器
 func (s *Server) Shutdown(ctx context.Context) error {
-	return s.httpSrv.Shutdown(ctx)
+	return s.httpServer.Shutdown(ctx)
 }

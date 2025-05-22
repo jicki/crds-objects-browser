@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crds-objects-browser
+  namespace: kube-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crds-objects-browser
+  template:
+    metadata:
+      labels:
+        app: crds-objects-browser
+    spec:
+      serviceAccount: crds-objects-browser
+      containers:
+      - name: browser
+        image: reg.deeproute.ai/deeproute-public/crds-objects-browser:0.1.5
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: http
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        env:
+        - name: TZ
+          value: Asia/Shanghai
+        volumeMounts:
+        - name: config
+          mountPath: /root/.kube
+          readOnly: true
+      volumes:
+      - name: config
+        configMap:
+          name: crds-objects-browser-kubeconfig 
