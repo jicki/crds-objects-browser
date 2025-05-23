@@ -77,12 +77,6 @@ func NewServer(config *rest.Config) (*Server, error) {
 	// 预加载资源
 	go server.initializeCache()
 
-	// 5秒后将 isReady 设置为 true
-	go func() {
-		time.Sleep(5 * time.Second)
-		server.isReady.Store(true)
-	}()
-
 	return server, nil
 }
 
@@ -118,6 +112,11 @@ func (s *Server) setupRoutes() {
 		api.GET("/namespaces", s.getNamespaces)
 		api.GET("/cache/stats", s.getCacheStats)
 	}
+
+	// 健康检查端点
+	s.router.GET("/healthz", s.healthCheck)
+	s.router.GET("/readyz", s.readinessCheck)
+	s.router.GET("/livez", s.livenessCheck)
 
 	// 静态文件服务
 	s.router.Static("/ui", "./ui/dist")
@@ -187,9 +186,23 @@ func (s *Server) initializeCache() {
 	// 预加载资源
 	if err := s.strategyManager.PreloadResources(resourceInfos); err != nil {
 		klog.Errorf("Failed to preload resources: %v", err)
+		return
 	}
 
 	klog.Info("Resource cache initialization completed")
+
+	// 设置服务就绪状态
+	s.SetReady(true)
+}
+
+// SetReady 设置服务就绪状态
+func (s *Server) SetReady(ready bool) {
+	s.isReady.Store(ready)
+	if ready {
+		klog.Info("Service is now ready")
+	} else {
+		klog.Info("Service is not ready")
+	}
 }
 
 // getCRDs 获取所有CRD资源
@@ -422,15 +435,57 @@ func (s *Server) Start() error {
 // Shutdown 关闭服务器
 func (s *Server) Shutdown() {
 	klog.Info("Shutting down server")
-	if s.strategyManager != nil {
-		s.strategyManager.Shutdown()
-	}
+	s.strategyManager.Shutdown()
 
-	// 关闭HTTP服务器
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := s.httpServer.Shutdown(ctx); err != nil {
 		klog.Errorf("Server shutdown error: %v", err)
 	}
+}
+
+// healthCheck 健康检查端点
+func (s *Server) healthCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "ok",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"service":   "crds-objects-browser",
+	})
+}
+
+// readinessCheck 就绪检查端点
+func (s *Server) readinessCheck(c *gin.Context) {
+	// 检查服务是否就绪
+	if !s.isReady.Load() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":  "not ready",
+			"message": "Service is not ready yet",
+		})
+		return
+	}
+
+	// 检查策略管理器是否正常
+	if s.strategyManager == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{
+			"status":  "not ready",
+			"message": "Strategy manager not initialized",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "ready",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"service":   "crds-objects-browser",
+	})
+}
+
+// livenessCheck 存活检查端点
+func (s *Server) livenessCheck(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{
+		"status":    "alive",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+		"service":   "crds-objects-browser",
+	})
 }
