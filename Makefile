@@ -2,7 +2,8 @@
 
 # 变量定义
 APP_NAME := crds-browser
-VERSION := $(shell git describe --tags --always --dirty)
+# 获取简洁的版本号，只保留主版本号和提交次数
+VERSION := $(shell git describe --tags --always | sed 's/-g[a-f0-9]*.*$$//' | sed 's/-dirty$$//')
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 GO_VERSION := $(shell go version | awk '{print $$3}')
 GIT_COMMIT := $(shell git rev-parse HEAD)
