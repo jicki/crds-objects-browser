@@ -59,12 +59,25 @@ build-ui: ## 构建前端
 	cd ui && npm install && npm run build
 
 .PHONY: build-go
-build-go: ## 构建Go后端
+build-go: ## 构建Go后端（Linux版本）
 	@echo "🔧 构建Go后端..."
 	CGO_ENABLED=$(CGO_ENABLED) GOOS=$(GOOS) GOARCH=$(GOARCH) go build \
 		-ldflags "$(LDFLAGS)" \
 		-o bin/$(PROJECT_NAME) \
 		cmd/main.go
+
+.PHONY: build-local
+build-local: build-ui ## 构建本地版本（自动检测操作系统）
+	@echo "🔧 构建本地版本..."
+	CGO_ENABLED=0 go build \
+		-ldflags "$(LDFLAGS)" \
+		-o bin/$(PROJECT_NAME)-local \
+		cmd/main.go
+
+.PHONY: run
+run: build-local ## 构建并运行本地版本
+	@echo "🚀 启动应用..."
+	./bin/$(PROJECT_NAME)-local -port=8080
 
 # 测试相关
 .PHONY: test
@@ -123,7 +136,7 @@ docker-run: ## 运行Docker容器
 	docker run -d \
 		--name $(PROJECT_NAME) \
 		-p 8080:8080 \
-		-v ~/.kube/config:/root/.kube/config:ro \
+		-v $(HOME)/.kube/config:/root/.kube/config:ro \
 		$(IMAGE_NAME):$(IMAGE_TAG)
 
 .PHONY: docker-stop

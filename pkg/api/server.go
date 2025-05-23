@@ -63,14 +63,16 @@ func NewServer(config *rest.Config) (*Server, error) {
 		discoveryClient: discoveryClient,
 		strategyManager: strategyManager,
 		port:            "8080",
-		httpServer: &http.Server{
-			Addr:    fmt.Sprintf(":%s", "8080"),
-			Handler: gin.Default(),
-		},
 	}
 
 	// 初始化路由
 	server.setupRoutes()
+
+	// 创建HTTP服务器，使用正确的router
+	server.httpServer = &http.Server{
+		Addr:    fmt.Sprintf(":%s", server.port),
+		Handler: server.router,
+	}
 
 	// 预加载资源
 	go server.initializeCache()

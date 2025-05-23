@@ -91,17 +91,36 @@ func createKubeConfig(kubeconfig string) (*rest.Config, error) {
 	config, err := rest.InClusterConfig()
 	if err != nil {
 		// 如果不在集群内，尝试使用默认的kubeconfig
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("failed to get user home directory: %v", err)
+		// 首先检查环境变量KUBECONFIG
+		if kubeconfigEnv := os.Getenv("KUBECONFIG"); kubeconfigEnv != "" {
+			config, err := clientcmd.BuildConfigFromFlags("", kubeconfigEnv)
+			if err == nil {
+				return config, nil
+			}
 		}
 
-		kubeconfigPath := fmt.Sprintf("%s/.kube/config", home)
-		config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to build config from default kubeconfig: %v", err)
+		// 尝试常见的kubeconfig路径
+		kubeconfigPaths := []string{
+			"/root/.kube/config",
+			"/home/.kube/config",
 		}
-		return config, nil
+
+		// 如果能获取到用户主目录，也加入路径
+		if home, err := os.UserHomeDir(); err == nil && home != "" {
+			kubeconfigPaths = append([]string{fmt.Sprintf("%s/.kube/config", home)}, kubeconfigPaths...)
+		}
+
+		for _, path := range kubeconfigPaths {
+			if _, err := os.Stat(path); err == nil {
+				config, err := clientcmd.BuildConfigFromFlags("", path)
+				if err == nil {
+					klog.Infof("Using kubeconfig from: %s", path)
+					return config, nil
+				}
+			}
+		}
+
+		return nil, fmt.Errorf("failed to find valid kubeconfig file")
 	}
 
 	return config, nil
