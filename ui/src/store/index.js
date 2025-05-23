@@ -131,7 +131,10 @@ export default createStore({
         }
       } catch (error) {
         console.error('Failed to fetch namespaces:', error)
-        commit('setError', '获取命名空间列表失败：' + (error.response?.data?.error || error.message))
+        // 不要因为命名空间获取失败而影响主要功能，只记录警告
+        console.warn('获取命名空间列表失败，但不影响主要功能：' + (error.response?.data?.error || error.message))
+        // 设置默认命名空间
+        commit('setNamespaces', ['default', 'kube-system', 'kube-public'])
       } finally {
         commit('setLoading', false)
       }

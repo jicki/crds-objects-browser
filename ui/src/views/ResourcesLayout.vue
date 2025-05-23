@@ -9,8 +9,10 @@
           <div class="search-box">
             <el-input
               v-model="searchQuery"
-              placeholder="搜索资源类型"
+              placeholder="🔍 搜索资源类型..."
               clearable
+              size="large"
+              style="width: 100%;"
             >
               <template #prefix>
                 <el-icon><Search /></el-icon>
@@ -28,14 +30,34 @@
             />
             
             <!-- 调试信息 -->
-            <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; font-size: 12px;">
-              <div>Loading: {{ loading }}</div>
-              <div>Error: {{ error }}</div>
-              <div>Resources count: {{ sortedResources ? sortedResources.length : 0 }}</div>
-              <div>Tree count: {{ resourcesTree ? resourcesTree.length : 0 }}</div>
-              <button @click="refreshData" style="margin-top: 5px; padding: 5px 10px; font-size: 12px;">
-                手动刷新数据
-              </button>
+            <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; font-size: 12px; border-radius: 4px;">
+              <div style="color: #606266;">
+                <span style="font-weight: bold;">📊 状态信息</span>
+              </div>
+              <div style="margin-top: 5px;">
+                <span style="color: #909399;">加载状态:</span> 
+                <el-tag :type="loading ? 'warning' : 'success'" size="small">
+                  {{ loading ? '加载中...' : '已完成' }}
+                </el-tag>
+              </div>
+              <div v-if="error" style="margin-top: 5px;">
+                <span style="color: #F56C6C;">⚠️ 错误:</span> 
+                <el-tag type="danger" size="small">{{ error }}</el-tag>
+              </div>
+              <div style="margin-top: 5px;">
+                <span style="color: #67C23A;">📦 资源总数:</span> 
+                <el-tag type="success" size="small">{{ sortedResources ? sortedResources.length : 0 }}</el-tag>
+              </div>
+              <div style="margin-top: 5px;">
+                <span style="color: #409EFF;">🌳 分组数量:</span> 
+                <el-tag type="primary" size="small">{{ resourcesTree ? resourcesTree.length : 0 }}</el-tag>
+              </div>
+              <div style="margin-top: 8px;">
+                <el-button @click="refreshData" size="small" type="primary" plain>
+                  <el-icon><Refresh /></el-icon>
+                  刷新数据
+                </el-button>
+              </div>
             </div>
             
             <el-skeleton v-if="loading" :rows="6" animated />
@@ -79,12 +101,13 @@
 import { computed, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Refresh } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourcesLayout',
   components: {
-    Search
+    Search,
+    Refresh
   },
   setup() {
     const store = useStore()
@@ -110,34 +133,102 @@ export default {
         return []
       }
       
-      const groupMap = new Map()
+      const k8sResources = []
+      const crdResources = []
       
+      // 分离K8s默认资源和CRD资源
       resources.forEach(resource => {
-        const groupName = resource.group || 'core'
+        const isK8sCore = resource.group === '' || 
+                         resource.group === 'apps' || 
+                         resource.group === 'batch' || 
+                         resource.group === 'networking.k8s.io' ||
+                         resource.group === 'rbac.authorization.k8s.io'
         
-        if (!groupMap.has(groupName)) {
-          groupMap.set(groupName, {
-            id: groupName,
-            label: groupName,
-            children: []
-          })
+        if (isK8sCore) {
+          k8sResources.push(resource)
+        } else {
+          crdResources.push(resource)
         }
-        
-        const groupNode = groupMap.get(groupName)
-        groupNode.children.push({
-          id: `${resource.group}/${resource.version}/${resource.name}`,
-          label: resource.name,
-          resource: resource
-        })
       })
       
-      // 按字母顺序排序组和资源
-      return Array.from(groupMap.values())
-        .sort((a, b) => a.label.localeCompare(b.label))
-        .map(group => {
-          group.children.sort((a, b) => a.label.localeCompare(b.label))
-          return group
+      const result = []
+      
+      // 添加K8s默认资源组
+      if (k8sResources.length > 0) {
+        const k8sGroupMap = new Map()
+        
+        k8sResources.forEach(resource => {
+          let groupName = resource.group || 'core'
+          
+          // 友好的组名显示
+          const groupDisplayNames = {
+            '': 'Kubernetes Core',
+            'apps': 'Apps',
+            'batch': 'Batch',
+            'networking.k8s.io': 'Networking',
+            'rbac.authorization.k8s.io': 'RBAC'
+          }
+          
+          const displayName = groupDisplayNames[resource.group] || groupName
+          
+          if (!k8sGroupMap.has(groupName)) {
+            k8sGroupMap.set(groupName, {
+              id: `k8s-${groupName}`,
+              label: `📦 ${displayName}`,
+              children: []
+            })
+          }
+          
+          const groupNode = k8sGroupMap.get(groupName)
+          groupNode.children.push({
+            id: `${resource.group}/${resource.version}/${resource.name}`,
+            label: resource.name,
+            resource: resource
+          })
         })
+        
+        // 添加K8s资源组到结果
+        Array.from(k8sGroupMap.values())
+          .sort((a, b) => a.label.localeCompare(b.label))
+          .forEach(group => {
+            group.children.sort((a, b) => a.label.localeCompare(b.label))
+            result.push(group)
+          })
+      }
+      
+      // 添加CRD资源组
+      if (crdResources.length > 0) {
+        const crdGroupMap = new Map()
+        
+        crdResources.forEach(resource => {
+          const groupName = resource.group || 'core'
+          
+          if (!crdGroupMap.has(groupName)) {
+            crdGroupMap.set(groupName, {
+              id: `crd-${groupName}`,
+              label: `🔧 ${groupName}`,
+              children: []
+            })
+          }
+          
+          const groupNode = crdGroupMap.get(groupName)
+          groupNode.children.push({
+            id: `${resource.group}/${resource.version}/${resource.name}`,
+            label: resource.name,
+            resource: resource
+          })
+        })
+        
+        // 添加CRD资源组到结果
+        Array.from(crdGroupMap.values())
+          .sort((a, b) => a.label.localeCompare(b.label))
+          .forEach(group => {
+            group.children.sort((a, b) => a.label.localeCompare(b.label))
+            result.push(group)
+          })
+      }
+      
+      return result
     }
 
     // 从Store获取排序后的资源列表
@@ -155,6 +246,14 @@ export default {
         const newTree = buildResourcesTree(resources)
         resourcesTree.value = newTree
         console.log('构建的树结构:', newTree)
+        
+        // 恢复之前选中的节点
+        setTimeout(() => {
+          const selectedKey = localStorage.getItem('selectedResourceKey')
+          if (selectedKey && resourcesTreeRef.value) {
+            resourcesTreeRef.value.setCurrentKey(selectedKey)
+          }
+        }, 100)
       } else {
         resourcesTree.value = []
         console.log('resources为空或无效，设置树结构为空数组')
@@ -178,6 +277,10 @@ export default {
     // 处理树节点点击
     const handleNodeClick = (node) => {
       if (node.resource) {
+        // 记住当前选中的节点
+        const currentKey = `${node.resource.group}/${node.resource.version}/${node.resource.name}`
+        localStorage.setItem('selectedResourceKey', currentKey)
+        
         store.dispatch('selectResource', node.resource)
         router.push({
           name: 'ResourceDetail',

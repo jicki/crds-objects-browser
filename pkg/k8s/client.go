@@ -342,6 +342,33 @@ func (c *Client) GetCRDs() ([]CRDResource, error) {
 
 	var crds []CRDResource
 
+	// 首先添加核心K8s资源
+	coreResources := []CRDResource{
+		{Group: "", Version: "v1", Kind: "Pod", Name: "pods", Namespaced: true},
+		{Group: "", Version: "v1", Kind: "Service", Name: "services", Namespaced: true},
+		{Group: "", Version: "v1", Kind: "ConfigMap", Name: "configmaps", Namespaced: true},
+		{Group: "", Version: "v1", Kind: "Secret", Name: "secrets", Namespaced: true},
+		{Group: "", Version: "v1", Kind: "PersistentVolume", Name: "persistentvolumes", Namespaced: false},
+		{Group: "", Version: "v1", Kind: "PersistentVolumeClaim", Name: "persistentvolumeclaims", Namespaced: true},
+		{Group: "", Version: "v1", Kind: "Node", Name: "nodes", Namespaced: false},
+		{Group: "", Version: "v1", Kind: "Namespace", Name: "namespaces", Namespaced: false},
+		{Group: "", Version: "v1", Kind: "ServiceAccount", Name: "serviceaccounts", Namespaced: true},
+		{Group: "apps", Version: "v1", Kind: "Deployment", Name: "deployments", Namespaced: true},
+		{Group: "apps", Version: "v1", Kind: "ReplicaSet", Name: "replicasets", Namespaced: true},
+		{Group: "apps", Version: "v1", Kind: "DaemonSet", Name: "daemonsets", Namespaced: true},
+		{Group: "apps", Version: "v1", Kind: "StatefulSet", Name: "statefulsets", Namespaced: true},
+		{Group: "batch", Version: "v1", Kind: "Job", Name: "jobs", Namespaced: true},
+		{Group: "batch", Version: "v1", Kind: "CronJob", Name: "cronjobs", Namespaced: true},
+		{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress", Name: "ingresses", Namespaced: true},
+		{Group: "networking.k8s.io", Version: "v1", Kind: "NetworkPolicy", Name: "networkpolicies", Namespaced: true},
+		{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "Role", Name: "roles", Namespaced: true},
+		{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "RoleBinding", Name: "rolebindings", Namespaced: true},
+		{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRole", Name: "clusterroles", Namespaced: false},
+		{Group: "rbac.authorization.k8s.io", Version: "v1", Kind: "ClusterRoleBinding", Name: "clusterrolebindings", Namespaced: false},
+	}
+
+	crds = append(crds, coreResources...)
+
 	for _, list := range resources {
 		if list == nil || list.APIResources == nil {
 			continue
@@ -358,8 +385,13 @@ func (c *Client) GetCRDs() ([]CRDResource, error) {
 				continue
 			}
 
-			// 排除内置资源和特殊资源
-			if isInternalResource(r.Name, gv.Group) || isSpecialResource(r.Name, gv.Group) {
+			// 跳过已经手动添加的核心资源
+			if isCoreResource(r.Name, gv.Group) {
+				continue
+			}
+
+			// 排除特殊资源
+			if isSpecialResource(r.Name, gv.Group) {
 				continue
 			}
 
@@ -381,6 +413,48 @@ func (c *Client) GetCRDs() ([]CRDResource, error) {
 	return crds, nil
 }
 
+// isCoreResource 检查是否为核心资源（已手动添加的资源）
+func isCoreResource(name, group string) bool {
+	coreResourceMap := map[string]map[string]bool{
+		"": {
+			"pods":                   true,
+			"services":               true,
+			"configmaps":             true,
+			"secrets":                true,
+			"persistentvolumes":      true,
+			"persistentvolumeclaims": true,
+			"nodes":                  true,
+			"namespaces":             true,
+			"serviceaccounts":        true,
+		},
+		"apps": {
+			"deployments":  true,
+			"replicasets":  true,
+			"daemonsets":   true,
+			"statefulsets": true,
+		},
+		"batch": {
+			"jobs":     true,
+			"cronjobs": true,
+		},
+		"networking.k8s.io": {
+			"ingresses":       true,
+			"networkpolicies": true,
+		},
+		"rbac.authorization.k8s.io": {
+			"roles":               true,
+			"rolebindings":        true,
+			"clusterroles":        true,
+			"clusterrolebindings": true,
+		},
+	}
+
+	if resources, ok := coreResourceMap[group]; ok {
+		return resources[name]
+	}
+	return false
+}
+
 // hasVerb 检查资源是否支持特定操作
 func hasVerb(r metav1.APIResource, verb string) bool {
 	for _, v := range r.Verbs {
@@ -394,6 +468,9 @@ func hasVerb(r metav1.APIResource, verb string) bool {
 // isSpecialResource 检查是否为特殊资源（需要排除的资源）
 func isSpecialResource(name, group string) bool {
 	specialResources := map[string][]string{
+		"": {
+			"componentstatuses", // 排除已弃用的ComponentStatus
+		},
 		"authorization.k8s.io": {
 			"selfsubjectrulesreviews",
 			"subjectaccessreviews",
@@ -456,12 +533,42 @@ func isDeprecatedResource(name, group, version string) bool {
 
 // 检查是否为内置资源
 func isInternalResource(name, group string) bool {
-	internalGroups := []string{"", "apps", "batch", "extensions", "core"}
-	for _, g := range internalGroups {
-		if g == group {
-			return true
-		}
+	// 允许显示的核心资源
+	allowedCoreResources := map[string]bool{
+		"pods":                   true,
+		"services":               true,
+		"deployments":            true,
+		"replicasets":            true,
+		"daemonsets":             true,
+		"statefulsets":           true,
+		"jobs":                   true,
+		"cronjobs":               true,
+		"configmaps":             true,
+		"secrets":                true,
+		"persistentvolumes":      true,
+		"persistentvolumeclaims": true,
+		"ingresses":              true,
+		"networkpolicies":        true,
+		"nodes":                  true,
+		"namespaces":             true,
+		"serviceaccounts":        true,
+		"roles":                  true,
+		"rolebindings":           true,
+		"clusterroles":           true,
+		"clusterrolebindings":    true,
 	}
+
+	// 对于核心组（""）和apps组，检查是否在允许列表中
+	if group == "" || group == "apps" || group == "batch" || group == "networking.k8s.io" || group == "rbac.authorization.k8s.io" {
+		return !allowedCoreResources[name]
+	}
+
+	// 对于extensions组，只允许特定资源
+	if group == "extensions" {
+		return !allowedCoreResources[name]
+	}
+
+	// 其他组的资源都显示（主要是CRD）
 	return false
 }
 

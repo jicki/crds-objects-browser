@@ -10,15 +10,52 @@
         
         <!-- 命名空间选择器 -->
         <div class="namespace-selector" v-if="selectedResource.namespaced">
-          <el-select v-model="currentNamespace" placeholder="选择命名空间" @change="handleNamespaceChange">
-            <el-option key="all" label="所有命名空间" value="all" />
+          <el-select 
+            v-model="currentNamespace" 
+            placeholder="选择命名空间" 
+            @change="handleNamespaceChange"
+            size="large"
+            style="width: 200px;"
+          >
+            <el-option key="all" label="🌐 所有命名空间" value="all" />
             <el-option
               v-for="ns in availableNamespaces"
               :key="ns"
-              :label="ns"
+              :label="`📁 ${ns}`"
               :value="ns"
             />
           </el-select>
+        </div>
+      </div>
+      
+      <!-- 统计信息和搜索 -->
+      <div class="stats-and-search" v-if="!loading">
+        <div class="stats-bar">
+          <el-tag type="info" size="large">
+            总计: {{ filteredObjects.length }} / {{ totalObjects }} 个对象
+          </el-tag>
+          <el-tag type="success" size="large" v-if="selectedResource.namespaced && currentNamespace !== 'all'">
+            命名空间: {{ currentNamespace }}
+          </el-tag>
+          <el-tag type="warning" size="large" v-if="searchQuery">
+            搜索: {{ searchQuery }}
+          </el-tag>
+        </div>
+        
+        <!-- 搜索框 -->
+        <div class="search-container">
+          <el-input
+            v-model="searchQuery"
+            placeholder="🔍 搜索资源名称、命名空间..."
+            clearable
+            size="large"
+            style="width: 300px;"
+            @input="handleSearch"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
         </div>
       </div>
       
@@ -26,11 +63,11 @@
       <el-skeleton v-if="loading" :rows="10" animated />
       
       <!-- 资源对象表格 -->
-      <div v-else-if="resourceObjects.length === 0" class="no-objects">
+      <div v-else-if="paginatedObjects.length === 0" class="no-objects">
         <p>没有{{ selectedResource.name }}资源对象</p>
       </div>
       <div v-else class="resource-table">
-        <el-table :data="resourceObjects" style="width: 100%" border stripe>
+        <el-table :data="paginatedObjects" style="width: 100%" border stripe>
           <el-table-column prop="name" label="名称" min-width="200" sortable />
           <el-table-column prop="namespace" label="命名空间" width="150" v-if="selectedResource.namespaced" sortable />
           <el-table-column prop="creationTimestamp" label="创建时间" width="200" sortable />
@@ -66,6 +103,19 @@
             </template>
           </el-table-column>
         </el-table>
+        
+        <!-- 分页组件 -->
+        <div class="pagination-container">
+          <el-pagination
+            v-model:current-page="currentPage"
+            v-model:page-size="pageSize"
+            :page-sizes="[50, 100, 200, 500]"
+            :total="filteredObjects.length"
+            layout="total, sizes, prev, pager, next, jumper"
+            @size-change="handleSizeChange"
+            @current-change="handleCurrentChange"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -75,14 +125,21 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
+import { Search } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourceDetail',
+  components: {
+    Search
+  },
   setup() {
     const store = useStore()
     const route = useRoute()
     const currentNamespace = ref('all')
     const availableNamespaces = ref([])
+    const currentPage = ref(1)
+    const pageSize = ref(100)
+    const searchQuery = ref('')
 
     // 从Store获取数据
     const selectedResource = computed(() => store.state.selectedResource)
@@ -128,6 +185,8 @@ export default {
     // 处理命名空间变化
     const handleNamespaceChange = (namespace) => {
       store.dispatch('setNamespace', namespace)
+      // 重置分页到第一页
+      currentPage.value = 1
     }
 
     // 获取对象状态
@@ -180,12 +239,73 @@ export default {
     // 监听选中资源变化，重新获取数据
     watch(selectedResource, fetchData)
 
+    // 监听资源对象变化，重置分页和搜索
+    watch(resourceObjects, () => {
+      currentPage.value = 1
+      searchQuery.value = ''
+    })
+
+    // 监听选中资源变化，重置搜索
+    watch(selectedResource, () => {
+      searchQuery.value = ''
+      currentPage.value = 1
+    })
+
     // 组件挂载时，如果有参数则加载资源
     onMounted(() => {
       if (route.params.resource) {
         loadResourceFromRoute()
       }
     })
+
+    // 分页相关逻辑
+    const totalObjects = computed(() => resourceObjects.value.length)
+    
+    // 搜索过滤逻辑
+    const filteredObjects = computed(() => {
+      if (!searchQuery.value) {
+        return resourceObjects.value
+      }
+      
+      const query = searchQuery.value.toLowerCase()
+      return resourceObjects.value.filter(obj => {
+        // 搜索名称
+        if (obj.name && obj.name.toLowerCase().includes(query)) {
+          return true
+        }
+        
+        // 搜索命名空间
+        if (obj.namespace && obj.namespace.toLowerCase().includes(query)) {
+          return true
+        }
+        
+        // 搜索Kind
+        if (obj.kind && obj.kind.toLowerCase().includes(query)) {
+          return true
+        }
+        
+        return false
+      })
+    })
+    
+    const paginatedObjects = computed(() => {
+      const start = (currentPage.value - 1) * pageSize.value
+      const end = start + pageSize.value
+      return filteredObjects.value.slice(start, end)
+    })
+
+    const handleSizeChange = (newSize) => {
+      pageSize.value = newSize
+    }
+
+    const handleCurrentChange = (newPage) => {
+      currentPage.value = newPage
+    }
+
+    const handleSearch = () => {
+      // 搜索时重置到第一页
+      currentPage.value = 1
+    }
 
     return {
       selectedResource,
@@ -197,7 +317,16 @@ export default {
       handleNamespaceChange,
       getStatus,
       getStatusType,
-      formatJson
+      formatJson,
+      totalObjects,
+      filteredObjects,
+      paginatedObjects,
+      currentPage,
+      pageSize,
+      handleSizeChange,
+      handleCurrentChange,
+      searchQuery,
+      handleSearch
     }
   }
 }
@@ -213,11 +342,66 @@ export default {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 20px;
+  padding: 15px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 8px;
+  color: white;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
 
 .resource-header h2 {
   margin: 0;
   font-weight: 500;
+  font-size: 24px;
+}
+
+.namespace-selector {
+  margin-left: 20px;
+}
+
+.namespace-selector .el-select {
+  --el-select-input-color: white;
+  --el-select-border-color-hover: rgba(255, 255, 255, 0.6);
+}
+
+.namespace-selector .el-input__wrapper {
+  background-color: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3) inset;
+}
+
+.namespace-selector .el-input__wrapper:hover {
+  border-color: rgba(255, 255, 255, 0.6);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.6) inset;
+}
+
+.namespace-selector .el-input__inner {
+  color: white;
+}
+
+.namespace-selector .el-input__inner::placeholder {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.stats-bar {
+  margin-bottom: 20px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.stats-and-search {
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.search-container {
+  display: flex;
+  align-items: center;
 }
 
 .no-resource, .no-objects {
@@ -226,8 +410,12 @@ export default {
   color: #909399;
 }
 
-.namespace-selector {
-  margin-left: 20px;
+.pagination-container {
+  margin-top: 20px;
+  display: flex;
+  justify-content: center;
+  padding: 20px 0;
+  border-top: 1px solid #ebeef5;
 }
 
 .yaml-popover .el-popover__title {
