@@ -75,11 +75,16 @@
               :filter-node-method="filterNode"
               ref="resourcesTreeRef"
               highlight-current
-              default-expand-all
               :expand-on-click-node="false"
+              :check-strictly="true"
+              :default-expanded-keys="defaultExpandedKeys"
             >
               <template #default="{ node, data }">
-                <span class="custom-tree-node">
+                <span 
+                  class="custom-tree-node"
+                  :class="{ 'clickable': data.resource, 'group-node': !data.resource }"
+                  @click.stop="data.resource && handleResourceClick(data.resource)"
+                >
                   <el-icon v-if="!data.resource" class="group-icon">
                     <component :is="getGroupIcon(data)" />
                   </el-icon>
@@ -106,7 +111,7 @@
 </template>
 
 <script>
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, nextTick, onMounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
 import { Search, Refresh, Box, Setting, Folder, Monitor, Connection, Grid, Document, Key, Link as LinkIcon, Timer, FolderOpened, User, DocumentCopy } from '@element-plus/icons-vue'
@@ -136,10 +141,27 @@ export default {
     const resourcesTree = ref([])
     const searchQuery = ref('')
     const resourcesTreeRef = ref(null)
+    const defaultExpandedKeys = ref([])
 
     // 初始化时加载资源
     store.dispatch('fetchResources')
     store.dispatch('fetchNamespaces')
+
+    // 添加滚动位置监听器
+    const setupScrollListener = () => {
+      const resourcesList = document.querySelector('.resources-list')
+      if (resourcesList) {
+        resourcesList.addEventListener('scroll', () => {
+          const scrollTop = resourcesList.scrollTop
+          localStorage.setItem('resourcesListScrollTop', scrollTop.toString())
+        })
+      }
+    }
+
+    // 页面加载完成后设置监听器
+    nextTick(() => {
+      setTimeout(setupScrollListener, 500)
+    })
 
     // 监听搜索查询变化
     watch(searchQuery, (val) => {
@@ -268,18 +290,71 @@ export default {
         resourcesTree.value = newTree
         console.log('构建的树结构:', newTree)
         
-        // 恢复之前选中的节点
-        setTimeout(() => {
-          const selectedKey = localStorage.getItem('selectedResourceKey')
-          if (selectedKey && resourcesTreeRef.value) {
-            resourcesTreeRef.value.setCurrentKey(selectedKey)
-          }
-        }, 100)
+        // 恢复展开状态
+        nextTick(() => {
+          restoreTreeState()
+        })
       } else {
         resourcesTree.value = []
         console.log('resources为空或无效，设置树结构为空数组')
       }
     }, { immediate: true, deep: true })
+
+    // 恢复树形组件状态
+    const restoreTreeState = () => {
+      console.log('开始恢复树形组件状态')
+      
+      // 恢复展开的节点
+      const savedExpandedKeys = localStorage.getItem('expandedKeys')
+      if (savedExpandedKeys) {
+        try {
+          const expandedKeys = JSON.parse(savedExpandedKeys)
+          console.log('恢复展开状态:', expandedKeys)
+          defaultExpandedKeys.value = expandedKeys
+          
+          // 延迟展开节点，确保DOM已渲染
+          setTimeout(() => {
+            if (resourcesTreeRef.value && expandedKeys.length > 0) {
+              expandedKeys.forEach(key => {
+                const node = resourcesTreeRef.value.getNode(key)
+                if (node) {
+                  node.expanded = true
+                }
+              })
+            }
+          }, 100)
+        } catch (e) {
+          console.warn('恢复展开状态失败:', e)
+        }
+      } else {
+        // 如果没有保存的状态，默认展开所有组节点
+        const groupKeys = resourcesTree.value.map(group => group.id)
+        defaultExpandedKeys.value = groupKeys
+        console.log('使用默认展开状态:', groupKeys)
+      }
+      
+      // 恢复选中的节点
+      const selectedKey = localStorage.getItem('selectedResourceKey')
+      if (selectedKey && resourcesTreeRef.value) {
+        setTimeout(() => {
+          resourcesTreeRef.value.setCurrentKey(selectedKey)
+          console.log('恢复选中节点:', selectedKey)
+        }, 150)
+      }
+      
+      // 恢复滚动位置
+      const savedScrollTop = localStorage.getItem('resourcesListScrollTop')
+      if (savedScrollTop) {
+        setTimeout(() => {
+          const resourcesList = document.querySelector('.resources-list')
+          if (resourcesList) {
+            const scrollTop = parseInt(savedScrollTop, 10)
+            resourcesList.scrollTop = scrollTop
+            console.log('恢复滚动位置:', scrollTop)
+          }
+        }, 300)
+      }
+    }
 
     // 监听store状态变化
     watch(() => store.state.resources, (resources) => {
@@ -297,21 +372,69 @@ export default {
 
     // 处理树节点点击
     const handleNodeClick = (node) => {
+      // 只处理资源节点的点击
       if (node.resource) {
-        // 记住当前选中的节点
-        const currentKey = `${node.resource.group}/${node.resource.version}/${node.resource.name}`
-        localStorage.setItem('selectedResourceKey', currentKey)
-        
-        store.dispatch('selectResource', node.resource)
-        router.push({
-          name: 'ResourceDetail',
-          params: {
-            group: node.resource.group,
-            version: node.resource.version,
-            resource: node.resource.name
-          }
-        })
+        handleResourceClick(node.resource)
       }
+    }
+
+    // 处理资源点击
+    const handleResourceClick = (resource) => {
+      // 记住当前选中的节点
+      const currentKey = `${resource.group}/${resource.version}/${resource.name}`
+      localStorage.setItem('selectedResourceKey', currentKey)
+      
+      // 保存当前滚动位置 - 使用更可靠的方法
+      const resourcesList = document.querySelector('.resources-list')
+      if (resourcesList) {
+        const scrollTop = resourcesList.scrollTop
+        localStorage.setItem('resourcesListScrollTop', scrollTop.toString())
+        console.log('保存滚动位置:', scrollTop)
+      }
+      
+      // 保存展开的节点
+      if (resourcesTreeRef.value) {
+        const expandedKeys = []
+        const traverse = (nodes) => {
+          nodes.forEach(node => {
+            const treeNode = resourcesTreeRef.value.getNode(node.id)
+            if (treeNode && treeNode.expanded) {
+              expandedKeys.push(node.id)
+            }
+            if (node.children) {
+              traverse(node.children)
+            }
+          })
+        }
+        traverse(resourcesTree.value)
+        localStorage.setItem('expandedKeys', JSON.stringify(expandedKeys))
+        console.log('保存展开状态:', expandedKeys)
+      }
+      
+      store.dispatch('selectResource', resource)
+      
+      // 使用replace避免历史记录问题，并立即恢复滚动位置
+      router.replace({
+        name: 'ResourceDetail',
+        params: {
+          group: resource.group,
+          version: resource.version,
+          resource: resource.name
+        }
+      }).then(() => {
+        // 路由跳转完成后立即恢复滚动位置
+        setTimeout(() => {
+          const savedScrollTop = localStorage.getItem('resourcesListScrollTop')
+          if (savedScrollTop) {
+            const resourcesList = document.querySelector('.resources-list')
+            if (resourcesList) {
+              const scrollTop = parseInt(savedScrollTop, 10)
+              resourcesList.scrollTop = scrollTop
+              console.log('路由跳转后恢复滚动位置:', scrollTop)
+            }
+          }
+        }, 50)
+      })
     }
 
     // 过滤节点的方法
@@ -368,6 +491,44 @@ export default {
       return label.replace(/📦|🔧|📁|📄/g, '').trim()
     }
 
+    // 强制保持滚动位置
+    const forceKeepScrollPosition = () => {
+      const savedScrollTop = localStorage.getItem('resourcesListScrollTop')
+      if (savedScrollTop) {
+        const scrollTop = parseInt(savedScrollTop, 10)
+        
+        // 多次尝试恢复滚动位置
+        const attempts = [50, 100, 200, 300, 500]
+        attempts.forEach(delay => {
+          setTimeout(() => {
+            const resourcesList = document.querySelector('.resources-list')
+            if (resourcesList && resourcesList.scrollTop !== scrollTop) {
+              resourcesList.scrollTop = scrollTop
+              console.log(`第${delay}ms尝试恢复滚动位置:`, scrollTop)
+            }
+          }, delay)
+        })
+      }
+    }
+
+    // 监听路由变化
+    watch(() => router.currentRoute.value.path, () => {
+      forceKeepScrollPosition()
+    })
+
+    // 组件挂载时立即恢复滚动位置
+    onMounted(() => {
+      // 立即尝试恢复滚动位置
+      forceKeepScrollPosition()
+      
+      // 确保在DOM完全渲染后再次恢复
+      nextTick(() => {
+        setTimeout(() => {
+          forceKeepScrollPosition()
+        }, 100)
+      })
+    })
+
     return {
       searchQuery,
       resourcesTree,
@@ -380,12 +541,15 @@ export default {
         label: 'label'
       },
       handleNodeClick,
+      handleResourceClick,
       filterNode,
       refreshData,
+      restoreTreeState,
       getGroupIcon,
       getResourceIcon,
       getNodeClass,
-      getDisplayLabel
+      getDisplayLabel,
+      defaultExpandedKeys
     }
   }
 }
@@ -432,6 +596,8 @@ export default {
   flex: 1;
   overflow-y: auto;
   padding: 15px;
+  scroll-behavior: auto;
+  position: relative;
 }
 
 .el-main {
@@ -454,6 +620,22 @@ export default {
   gap: 8px;
   width: 100%;
   padding: 4px 0;
+}
+
+.custom-tree-node.clickable {
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.custom-tree-node.clickable:hover {
+  background-color: rgba(64, 158, 255, 0.1);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.custom-tree-node.group-node {
+  cursor: default;
+  font-weight: 600;
 }
 
 .group-icon {

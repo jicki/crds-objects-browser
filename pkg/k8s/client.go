@@ -607,7 +607,10 @@ func (c *Client) ListCRDObjects(group, version, resource, namespace string) ([]C
 
 	objStore, exists := c.objectsStore[gvr]
 	if !exists {
-		return nil, fmt.Errorf("no objects found for resource %s.%s/%s", resource, group, version)
+		// 如果还没有数据，返回空数组而不是错误
+		// 这通常发生在informer还没有完全同步时
+		fmt.Printf("Warning: No objects store found for resource %s.%s/%s, returning empty objects list\n", resource, group, version)
+		return []CRDObject{}, nil
 	}
 
 	var objects []CRDObject
@@ -668,12 +671,15 @@ func (c *Client) GetAllAvailableNamespaces(group, version, resource string) ([]s
 
 	objStore, exists := c.objectsStore[gvr]
 	if !exists {
-		return nil, fmt.Errorf("no objects found for resource %s.%s/%s", resource, group, version)
+		// 如果还没有数据，返回空数组而不是错误
+		// 这通常发生在informer还没有完全同步时
+		fmt.Printf("Warning: No objects store found for resource %s.%s/%s, returning empty namespaces list\n", resource, group, version)
+		return []string{}, nil
 	}
 
 	var namespaces []string
 	for ns := range objStore {
-		if len(objStore[ns]) > 0 {
+		if len(objStore[ns]) > 0 && ns != "default" { // 排除默认的空命名空间键
 			namespaces = append(namespaces, ns)
 		}
 	}

@@ -49,13 +49,40 @@
             placeholder="🔍 搜索资源名称、命名空间..."
             clearable
             size="large"
-            style="width: 300px;"
+            style="width: 300px; margin-right: 15px;"
             @input="handleSearch"
           >
             <template #prefix>
               <el-icon><Search /></el-icon>
             </template>
           </el-input>
+          
+          <!-- 状态过滤器 -->
+          <el-select
+            v-model="statusFilter"
+            placeholder="📊 状态过滤"
+            clearable
+            size="large"
+            style="width: 200px;"
+            @change="handleStatusFilter"
+          >
+            <el-option
+              v-for="status in availableStatuses"
+              :key="status.value"
+              :label="status.label"
+              :value="status.value"
+            >
+              <div style="display: flex; align-items: center;">
+                <el-tag :type="status.type" size="small" effect="dark" style="margin-right: 8px;">
+                  <el-icon style="margin-right: 4px;">
+                    <component :is="status.icon" />
+                  </el-icon>
+                  {{ status.label }}
+                </el-tag>
+                <span style="color: #909399; font-size: 12px;">({{ status.count }})</span>
+              </div>
+            </el-option>
+          </el-select>
         </div>
       </div>
       
@@ -173,7 +200,7 @@
 </template>
 
 <script>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
 import { Search, Document, Clock, CopyDocument, View as ViewIcon, SuccessFilled, WarningFilled, CircleCloseFilled, InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
@@ -200,6 +227,7 @@ export default {
     const currentPage = ref(1)
     const pageSize = ref(100)
     const searchQuery = ref('')
+    const statusFilter = ref('')
 
     // 从Store获取数据
     const selectedResource = computed(() => store.state.selectedResource)
@@ -231,6 +259,9 @@ export default {
     // 获取数据
     const fetchData = async () => {
       if (selectedResource.value) {
+        // 保存当前滚动位置
+        saveScrollPosition()
+        
         // 获取资源对象
         await store.dispatch('fetchResourceObjects')
         
@@ -239,11 +270,45 @@ export default {
           await store.dispatch('fetchResourceNamespaces')
           availableNamespaces.value = store.state.resourceNamespaces
         }
+        
+        // 恢复滚动位置
+        nextTick(() => {
+          restoreScrollPosition()
+        })
+      }
+    }
+
+    // 保存滚动位置
+    const saveScrollPosition = () => {
+      const mainContainer = document.querySelector('.el-main')
+      if (mainContainer && selectedResource.value) {
+        const scrollKey = `scroll_${selectedResource.value.group}_${selectedResource.value.version}_${selectedResource.value.name}`
+        localStorage.setItem(scrollKey, mainContainer.scrollTop.toString())
+      }
+    }
+
+    // 恢复滚动位置
+    const restoreScrollPosition = () => {
+      if (selectedResource.value) {
+        const scrollKey = `scroll_${selectedResource.value.group}_${selectedResource.value.version}_${selectedResource.value.name}`
+        const savedScrollTop = localStorage.getItem(scrollKey)
+        
+        if (savedScrollTop) {
+          const mainContainer = document.querySelector('.el-main')
+          if (mainContainer) {
+            setTimeout(() => {
+              mainContainer.scrollTop = parseInt(savedScrollTop, 10)
+            }, 100)
+          }
+        }
       }
     }
 
     // 处理命名空间变化
     const handleNamespaceChange = (namespace) => {
+      // 保存当前滚动位置
+      saveScrollPosition()
+      
       store.dispatch('setNamespace', namespace)
       // 重置分页到第一页
       currentPage.value = 1
@@ -264,6 +329,25 @@ export default {
             return latestCondition.status || latestCondition.type
           }
           return row.status[field]
+        }
+      }
+      
+      // 检查特殊的状态字段
+      if (row.status.replicas !== undefined && row.status.readyReplicas !== undefined) {
+        if (row.status.readyReplicas === row.status.replicas && row.status.replicas > 0) {
+          return 'Ready'
+        } else if (row.status.readyReplicas === 0) {
+          return 'NotReady'
+        } else {
+          return 'Partial'
+        }
+      }
+      
+      // 检查Pod特有状态
+      if (row.kind === 'Pod') {
+        if (row.status.containerStatuses) {
+          const allReady = row.status.containerStatuses.every(c => c.ready)
+          return allReady ? 'Running' : 'NotReady'
         }
       }
       
@@ -356,11 +440,13 @@ export default {
     watch(resourceObjects, () => {
       currentPage.value = 1
       searchQuery.value = ''
+      statusFilter.value = ''
     })
 
     // 监听选中资源变化，重置搜索
     watch(selectedResource, () => {
       searchQuery.value = ''
+      statusFilter.value = ''
       currentPage.value = 1
     })
 
@@ -376,31 +462,141 @@ export default {
     
     // 搜索过滤逻辑
     const filteredObjects = computed(() => {
-      if (!searchQuery.value) {
-        return resourceObjects.value
+      let filtered = resourceObjects.value
+      
+      // 搜索过滤
+      if (searchQuery.value) {
+        const query = searchQuery.value.toLowerCase()
+        filtered = filtered.filter(obj => {
+          // 搜索名称
+          if (obj.name && obj.name.toLowerCase().includes(query)) {
+            return true
+          }
+          
+          // 搜索命名空间
+          if (obj.namespace && obj.namespace.toLowerCase().includes(query)) {
+            return true
+          }
+          
+          // 搜索Kind
+          if (obj.kind && obj.kind.toLowerCase().includes(query)) {
+            return true
+          }
+          
+          return false
+        })
       }
       
-      const query = searchQuery.value.toLowerCase()
-      return resourceObjects.value.filter(obj => {
-        // 搜索名称
-        if (obj.name && obj.name.toLowerCase().includes(query)) {
-          return true
-        }
-        
-        // 搜索命名空间
-        if (obj.namespace && obj.namespace.toLowerCase().includes(query)) {
-          return true
-        }
-        
-        // 搜索Kind
-        if (obj.kind && obj.kind.toLowerCase().includes(query)) {
-          return true
-        }
-        
-        return false
-      })
+      // 状态过滤
+      if (statusFilter.value) {
+        filtered = filtered.filter(obj => {
+          const status = getStatus(obj)
+          return status && normalizeStatus(status) === statusFilter.value
+        })
+      }
+      
+      return filtered
     })
-    
+
+    // 标准化状态值
+    const normalizeStatus = (status) => {
+      if (!status) return 'unknown'
+      
+      const statusLower = String(status).toLowerCase()
+      
+      // 成功/正常状态
+      if (statusLower.includes('running') || 
+          statusLower.includes('ready') || 
+          statusLower.includes('success') || 
+          statusLower.includes('true') ||
+          statusLower.includes('active') ||
+          statusLower.includes('bound') ||
+          statusLower.includes('available')) {
+        return 'success'
+      } 
+      
+      // 警告状态
+      if (statusLower.includes('pending') || 
+          statusLower.includes('waiting') ||
+          statusLower.includes('partial') ||
+          statusLower.includes('progressing') ||
+          statusLower.includes('creating') ||
+          statusLower.includes('updating')) {
+        return 'warning'
+      } 
+      
+      // 错误状态
+      if (statusLower.includes('error') || 
+          statusLower.includes('failed') || 
+          statusLower.includes('false') ||
+          statusLower.includes('notready') ||
+          statusLower.includes('crashloopbackoff') ||
+          statusLower.includes('imagepullbackoff') ||
+          statusLower.includes('evicted') ||
+          statusLower.includes('terminated')) {
+        return 'danger'
+      }
+      
+      // 停止状态
+      if (statusLower.includes('stopped') ||
+          statusLower.includes('completed') ||
+          statusLower.includes('succeeded') ||
+          statusLower.includes('finished')) {
+        return 'info'
+      }
+      
+      return 'info'
+    }
+
+    // 计算可用状态列表
+    const availableStatuses = computed(() => {
+      const statusMap = new Map()
+      
+      resourceObjects.value.forEach(obj => {
+        const status = getStatus(obj)
+        if (status) {
+          const normalizedStatus = normalizeStatus(status)
+          const statusKey = normalizedStatus
+          
+          if (!statusMap.has(statusKey)) {
+            statusMap.set(statusKey, {
+              value: statusKey,
+              label: getStatusLabel(normalizedStatus),
+              type: normalizedStatus,
+              icon: getStatusIconName(normalizedStatus),
+              count: 0
+            })
+          }
+          
+          statusMap.get(statusKey).count++
+        }
+      })
+      
+      return Array.from(statusMap.values()).sort((a, b) => b.count - a.count)
+    })
+
+    // 获取状态标签
+    const getStatusLabel = (normalizedStatus) => {
+      const labels = {
+        'success': '正常',
+        'warning': '处理中',
+        'danger': '异常',
+        'info': '完成'
+      }
+      return labels[normalizedStatus] || '未知'
+    }
+
+    // 获取状态图标名称
+    const getStatusIconName = (normalizedStatus) => {
+      const icons = {
+        'success': 'SuccessFilled',
+        'warning': 'WarningFilled',
+        'danger': 'CircleCloseFilled',
+        'info': 'InfoFilled'
+      }
+      return icons[normalizedStatus] || 'QuestionFilled'
+    }
+
     const paginatedObjects = computed(() => {
       const start = (currentPage.value - 1) * pageSize.value
       const end = start + pageSize.value
@@ -419,6 +615,16 @@ export default {
       // 搜索时重置到第一页
       currentPage.value = 1
     }
+
+    const handleStatusFilter = () => {
+      // 状态过滤时重置到第一页
+      currentPage.value = 1
+    }
+
+    // 组件卸载时保存滚动位置
+    onUnmounted(() => {
+      saveScrollPosition()
+    })
 
     return {
       selectedResource,
@@ -442,7 +648,10 @@ export default {
       handleSizeChange,
       handleCurrentChange,
       searchQuery,
-      handleSearch
+      handleSearch,
+      statusFilter,
+      handleStatusFilter,
+      availableStatuses
     }
   }
 }

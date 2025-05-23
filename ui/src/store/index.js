@@ -159,14 +159,16 @@ export default createStore({
       try {
         const url = `${API_URL}/crds/${group}/${version}/${name}/objects${namespace !== 'all' ? `?namespace=${namespace}` : ''}`
         const response = await axios.get(url)
-        if (response.data) {
+        if (response.data && Array.isArray(response.data)) {
           commit('setResourceObjects', response.data)
         } else {
-          throw new Error('No data received')
+          // 如果没有数据，设置空数组
+          commit('setResourceObjects', [])
         }
       } catch (error) {
-        console.error('Failed to fetch resource objects:', error)
-        commit('setError', '获取资源对象失败：' + (error.response?.data?.error || error.message))
+        console.warn('获取资源对象失败，使用空列表：', error.response?.data?.error || error.message)
+        // 不显示错误信息，只设置空的对象列表
+        commit('setResourceObjects', [])
       } finally {
         commit('setLoading', false)
       }
@@ -178,21 +180,18 @@ export default createStore({
       
       const { group, version, name } = state.selectedResource
       
-      commit('setLoading', true)
-      commit('setError', null)
       try {
         const url = `${API_URL}/crds/${group}/${version}/${name}/namespaces`
         const response = await axios.get(url)
         if (response.data) {
           commit('setResourceNamespaces', response.data)
         } else {
-          throw new Error('No data received')
+          commit('setResourceNamespaces', [])
         }
       } catch (error) {
-        console.error('Failed to fetch resource namespaces:', error)
-        commit('setError', '获取资源命名空间失败：' + (error.response?.data?.error || error.message))
-      } finally {
-        commit('setLoading', false)
+        console.warn('获取资源命名空间失败，使用空列表：', error.response?.data?.error || error.message)
+        // 不显示错误信息，只设置空的命名空间列表
+        commit('setResourceNamespaces', [])
       }
     },
     
