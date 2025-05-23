@@ -67,37 +67,88 @@
         <p>没有{{ selectedResource.name }}资源对象</p>
       </div>
       <div v-else class="resource-table">
-        <el-table :data="paginatedObjects" style="width: 100%" border stripe>
-          <el-table-column prop="name" label="名称" min-width="200" sortable />
-          <el-table-column prop="namespace" label="命名空间" width="150" v-if="selectedResource.namespaced" sortable />
-          <el-table-column prop="creationTimestamp" label="创建时间" width="200" sortable />
+        <el-table 
+          :data="paginatedObjects" 
+          style="width: 100%" 
+          border 
+          stripe
+          :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: 'bold' }"
+          :row-style="{ height: '50px' }"
+          size="default"
+        >
+          <el-table-column prop="name" label="名称" min-width="200" sortable show-overflow-tooltip>
+            <template #default="scope">
+              <div class="name-cell">
+                <el-icon class="resource-icon"><Document /></el-icon>
+                <span class="resource-name">{{ scope.row.name }}</span>
+              </div>
+            </template>
+          </el-table-column>
+          
+          <el-table-column 
+            prop="namespace" 
+            label="命名空间" 
+            width="180" 
+            v-if="selectedResource.namespaced" 
+            sortable 
+            show-overflow-tooltip
+          >
+            <template #default="scope">
+              <el-tag v-if="scope.row.namespace" type="info" size="small" effect="plain">
+                📁 {{ scope.row.namespace }}
+              </el-tag>
+              <span v-else class="no-namespace">-</span>
+            </template>
+          </el-table-column>
+          
+          <el-table-column prop="creationTimestamp" label="创建时间" width="200" sortable>
+            <template #default="scope">
+              <div class="time-cell">
+                <el-icon class="time-icon"><Clock /></el-icon>
+                <span>{{ formatTime(scope.row.creationTimestamp) }}</span>
+              </div>
+            </template>
+          </el-table-column>
           
           <!-- 动态状态列 -->
-          <el-table-column label="状态" width="150" align="center">
+          <el-table-column label="状态" width="120" align="center">
             <template #default="scope">
-              <div v-if="getStatus(scope.row)">
-                <el-tag :type="getStatusType(scope.row)">
+              <div v-if="getStatus(scope.row)" class="status-cell">
+                <el-tag :type="getStatusType(scope.row)" size="small" effect="dark">
+                  <el-icon class="status-icon">
+                    <component :is="getStatusIcon(scope.row)" />
+                  </el-icon>
                   {{ getStatus(scope.row) }}
                 </el-tag>
               </div>
-              <span v-else>-</span>
+              <span v-else class="no-status">-</span>
             </template>
           </el-table-column>
           
           <!-- 操作列 -->
-          <el-table-column label="操作" width="100" align="center">
+          <el-table-column label="操作" width="100" align="center" fixed="right">
             <template #default="scope">
               <el-popover
                 placement="left"
                 trigger="click"
-                :width="600"
+                :width="700"
                 popper-class="yaml-popover"
               >
                 <template #reference>
-                  <el-button size="small" type="primary" plain>详情</el-button>
+                  <el-button size="small" type="primary" plain>
+                    <el-icon><ViewIcon /></el-icon>
+                    详情
+                  </el-button>
                 </template>
                 <div class="yaml-content">
-                  <pre>{{ formatJson(scope.row) }}</pre>
+                  <div class="yaml-header">
+                    <h4>{{ scope.row.name }} 详细信息</h4>
+                    <el-button size="small" @click="copyToClipboard(scope.row)">
+                      <el-icon><CopyDocument /></el-icon>
+                      复制
+                    </el-button>
+                  </div>
+                  <pre class="yaml-text">{{ formatJson(scope.row) }}</pre>
                 </div>
               </el-popover>
             </template>
@@ -125,12 +176,21 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { Search } from '@element-plus/icons-vue'
+import { Search, Document, Clock, CopyDocument, View as ViewIcon, SuccessFilled, WarningFilled, CircleCloseFilled, InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourceDetail',
   components: {
-    Search
+    Search,
+    Document,
+    Clock,
+    CopyDocument,
+    ViewIcon,
+    SuccessFilled,
+    WarningFilled,
+    CircleCloseFilled,
+    InfoFilled,
+    QuestionFilled
   },
   setup() {
     const store = useStore()
@@ -233,6 +293,59 @@ export default {
       return JSON.stringify(obj, null, 2)
     }
 
+    // 格式化时间显示
+    const formatTime = (timestamp) => {
+      if (!timestamp) return '-'
+      const date = new Date(timestamp)
+      const now = new Date()
+      const diff = now - date
+      
+      // 计算时间差
+      const minutes = Math.floor(diff / (1000 * 60))
+      const hours = Math.floor(diff / (1000 * 60 * 60))
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+      
+      if (days > 0) {
+        return `${days}天前`
+      } else if (hours > 0) {
+        return `${hours}小时前`
+      } else if (minutes > 0) {
+        return `${minutes}分钟前`
+      } else {
+        return '刚刚'
+      }
+    }
+
+    // 获取状态图标
+    const getStatusIcon = (row) => {
+      const status = getStatus(row)
+      if (!status) return 'QuestionFilled'
+      
+      const statusLower = String(status).toLowerCase()
+      
+      if (statusLower.includes('running') || statusLower.includes('ready') || statusLower.includes('success') || statusLower.includes('true')) {
+        return 'SuccessFilled'
+      } else if (statusLower.includes('pending') || statusLower.includes('waiting')) {
+        return 'WarningFilled'
+      } else if (statusLower.includes('error') || statusLower.includes('failed') || statusLower.includes('false')) {
+        return 'CircleCloseFilled'
+      }
+      
+      return 'InfoFilled'
+    }
+
+    // 复制到剪贴板
+    const copyToClipboard = async (obj) => {
+      try {
+        const text = JSON.stringify(obj, null, 2)
+        await navigator.clipboard.writeText(text)
+        // 这里可以添加成功提示
+        console.log('复制成功')
+      } catch (err) {
+        console.error('复制失败:', err)
+      }
+    }
+
     // 监听路由变化
     watch(() => route.params, loadResourceFromRoute, { immediate: true })
 
@@ -318,6 +431,9 @@ export default {
       getStatus,
       getStatusType,
       formatJson,
+      formatTime,
+      getStatusIcon,
+      copyToClipboard,
       totalObjects,
       filteredObjects,
       paginatedObjects,
@@ -435,5 +551,114 @@ export default {
   color: #333;
   border-radius: 4px;
   white-space: pre-wrap;
+}
+
+.name-cell {
+  display: flex;
+  align-items: center;
+}
+
+.resource-icon {
+  color: #409eff;
+  margin-right: 8px;
+}
+
+.resource-name {
+  font-weight: 500;
+  color: #303133;
+}
+
+.time-cell {
+  display: flex;
+  align-items: center;
+}
+
+.time-icon {
+  color: #909399;
+  margin-right: 6px;
+}
+
+.status-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.status-icon {
+  margin-right: 4px;
+}
+
+.no-namespace, .no-status {
+  color: #c0c4cc;
+  font-style: italic;
+}
+
+.yaml-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #ebeef5;
+}
+
+.yaml-header h4 {
+  margin: 0;
+  color: #303133;
+  font-size: 16px;
+}
+
+.yaml-text {
+  margin: 0;
+  padding: 15px;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  background-color: #f8f9fa;
+  color: #2c3e50;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 500px;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* 表格行悬停效果 */
+:deep(.el-table__row:hover) {
+  background-color: #f5f7fa !important;
+}
+
+/* 表格边框优化 */
+:deep(.el-table) {
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+}
+
+/* 表格头部样式 */
+:deep(.el-table__header-wrapper) {
+  background: linear-gradient(135deg, #f5f7fa 0%, #e9ecef 100%);
+}
+
+/* 状态标签样式优化 */
+:deep(.el-tag.el-tag--success.el-tag--dark) {
+  background-color: #67c23a;
+  border-color: #67c23a;
+}
+
+:deep(.el-tag.el-tag--warning.el-tag--dark) {
+  background-color: #e6a23c;
+  border-color: #e6a23c;
+}
+
+:deep(.el-tag.el-tag--danger.el-tag--dark) {
+  background-color: #f56c6c;
+  border-color: #f56c6c;
+}
+
+:deep(.el-tag.el-tag--info.el-tag--dark) {
+  background-color: #909399;
+  border-color: #909399;
 }
 </style> 

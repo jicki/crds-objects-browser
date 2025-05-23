@@ -76,12 +76,20 @@
               ref="resourcesTreeRef"
               highlight-current
               default-expand-all
+              :expand-on-click-node="false"
             >
               <template #default="{ node, data }">
                 <span class="custom-tree-node">
-                  <span v-if="!data.resource">📁</span>
-                  <span v-else>📄</span>
-                  <span>{{ node.label }}</span>
+                  <el-icon v-if="!data.resource" class="group-icon">
+                    <component :is="getGroupIcon(data)" />
+                  </el-icon>
+                  <el-icon v-else class="resource-icon">
+                    <component :is="getResourceIcon(data.resource)" />
+                  </el-icon>
+                  <span :class="getNodeClass(data)">{{ getDisplayLabel(node.label) }}</span>
+                  <el-tag v-if="data.children" size="small" type="info" class="count-tag">
+                    {{ data.children.length }}
+                  </el-tag>
                 </span>
               </template>
             </el-tree>
@@ -101,13 +109,26 @@
 import { computed, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
-import { Search, Refresh } from '@element-plus/icons-vue'
+import { Search, Refresh, Box, Setting, Folder, Monitor, Connection, Grid, Document, Key, Link as LinkIcon, Timer, FolderOpened, User, DocumentCopy } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourcesLayout',
   components: {
     Search,
-    Refresh
+    Refresh,
+    Box,
+    Setting,
+    Folder,
+    Monitor,
+    Connection,
+    Grid,
+    Document,
+    Key,
+    LinkIcon,
+    Timer,
+    FolderOpened,
+    User,
+    DocumentCopy
   },
   setup() {
     const store = useStore()
@@ -304,6 +325,49 @@ export default {
       store.dispatch('fetchNamespaces')
     }
 
+    // 获取组图标
+    const getGroupIcon = (data) => {
+      const label = data.label.toLowerCase()
+      if (label.includes('📦')) {
+        return 'Box'
+      } else if (label.includes('🔧')) {
+        return 'Setting'
+      }
+      return 'Folder'
+    }
+
+    // 获取资源图标
+    const getResourceIcon = (resource) => {
+      const kind = resource.kind.toLowerCase()
+      
+      // 根据资源类型返回不同图标
+      if (kind.includes('pod')) return 'Monitor'
+      if (kind.includes('service')) return 'Connection'
+      if (kind.includes('deployment')) return 'Grid'
+      if (kind.includes('configmap')) return 'Document'
+      if (kind.includes('secret')) return 'Key'
+      if (kind.includes('ingress')) return 'LinkIcon'
+      if (kind.includes('job')) return 'Timer'
+      if (kind.includes('namespace')) return 'FolderOpened'
+      if (kind.includes('node')) return 'Monitor'
+      if (kind.includes('role')) return 'User'
+      
+      return 'DocumentCopy'
+    }
+
+    // 获取节点样式类
+    const getNodeClass = (data) => {
+      if (!data.resource) {
+        return data.label.includes('📦') ? 'k8s-group-label' : 'crd-group-label'
+      }
+      return 'resource-label'
+    }
+
+    // 获取显示标签（去掉emoji）
+    const getDisplayLabel = (label) => {
+      return label.replace(/📦|🔧|📁|📄/g, '').trim()
+    }
+
     return {
       searchQuery,
       resourcesTree,
@@ -317,7 +381,11 @@ export default {
       },
       handleNodeClick,
       filterNode,
-      refreshData
+      refreshData,
+      getGroupIcon,
+      getResourceIcon,
+      getNodeClass,
+      getDisplayLabel
     }
   }
 }
@@ -384,6 +452,102 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.group-icon {
+  color: #409eff;
+  font-size: 16px;
+}
+
+.resource-icon {
+  color: #67c23a;
+  font-size: 14px;
+}
+
+.k8s-group-label {
+  font-weight: 600;
+  color: #409eff;
+  font-size: 14px;
+}
+
+.crd-group-label {
+  font-weight: 600;
+  color: #e6a23c;
+  font-size: 14px;
+}
+
+.resource-label {
+  color: #606266;
+  font-size: 13px;
+}
+
+.count-tag {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+/* 树形组件样式优化 */
+:deep(.el-tree) {
+  background: transparent;
+}
+
+:deep(.el-tree-node__content) {
+  height: 36px;
+  border-radius: 6px;
+  margin: 2px 0;
+  transition: all 0.3s ease;
+}
+
+:deep(.el-tree-node__content:hover) {
+  background-color: #f0f9ff;
+  transform: translateX(4px);
+}
+
+:deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background: linear-gradient(135deg, #409eff 0%, #67c23a 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
+}
+
+:deep(.el-tree-node.is-current .k8s-group-label),
+:deep(.el-tree-node.is-current .crd-group-label),
+:deep(.el-tree-node.is-current .resource-label) {
+  color: white;
+}
+
+:deep(.el-tree-node.is-current .group-icon),
+:deep(.el-tree-node.is-current .resource-icon) {
+  color: white;
+}
+
+:deep(.el-tree-node__expand-icon) {
+  color: #409eff;
+  font-size: 14px;
+}
+
+:deep(.el-tree-node__expand-icon.expanded) {
+  transform: rotate(90deg);
+}
+
+/* 侧边栏整体优化 */
+.sidebar {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-right: 1px solid #e2e8f0;
+}
+
+.header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-bottom: none;
+}
+
+.search-box {
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid #e2e8f0;
 }
 
 :deep(.el-empty__image) {
