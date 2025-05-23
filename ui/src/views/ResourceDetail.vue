@@ -302,9 +302,22 @@ export default {
       console.log('=== loadResourceFromRoute 开始 ===')
       console.log('路由参数:', { group, version, resource })
       console.log('当前路由:', route)
+      console.log('路由名称:', route.name)
       
-      if (group && version && resource) {
-        console.log('loadResourceFromRoute 被调用，参数:', { group, version, resource })
+      if (version && resource) {
+        // 根据路由名称确定group值
+        let actualGroup
+        if (route.name === 'CoreResourceDetail') {
+          // Kubernetes Core资源路由，group为空字符串
+          actualGroup = ''
+          console.log('检测到Core资源路由，设置group为空字符串')
+        } else {
+          // 普通资源路由，使用路由参数中的group
+          actualGroup = group
+          console.log('检测到普通资源路由，group:', actualGroup)
+        }
+        
+        console.log('loadResourceFromRoute 被调用，参数:', { group: actualGroup, version, resource })
         console.log('当前 store.state.resources:', store.state.resources)
         console.log('当前 store.state.resources 长度:', store.state.resources ? store.state.resources.length : 'null/undefined')
         console.log('当前 selectedResource:', store.state.selectedResource)
@@ -312,14 +325,12 @@ export default {
         // 查找资源的函数
         const findAndSelectResource = () => {
           console.log('开始查找资源...')
-          // 处理group参数：如果是'core'，则转换为空字符串
-          const searchGroup = group === 'core' ? '' : group
           
           const resourceItem = store.state.resources.find(r => 
-            r.group === searchGroup && r.version === version && r.name === resource
+            r.group === actualGroup && r.version === version && r.name === resource
           )
           
-          console.log('查找条件:', { searchGroup, version, resource })
+          console.log('查找条件:', { group: actualGroup, version, resource })
           console.log('查找到的资源:', resourceItem)
           
           if (resourceItem) {

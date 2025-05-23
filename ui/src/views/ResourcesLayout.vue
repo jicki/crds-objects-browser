@@ -512,18 +512,32 @@ export default {
       }
       
       // 构建路由参数
-      const routeParams = {
-        group: resource.group || 'core',
-        version: resource.version,
-        resource: resource.name
+      let routeName, routeParams
+      
+      if (!resource.group || resource.group === '') {
+        // Kubernetes Core资源（group为空）
+        routeName = 'CoreResourceDetail'
+        routeParams = {
+          version: resource.version,
+          resource: resource.name
+        }
+      } else {
+        // 其他资源（有group）
+        routeName = 'ResourceDetail'
+        routeParams = {
+          group: resource.group,
+          version: resource.version,
+          resource: resource.name
+        }
       }
-      console.log('准备跳转路由，参数:', routeParams)
+      
+      console.log('准备跳转路由，名称:', routeName, '参数:', routeParams)
       console.log('当前路由:', router.currentRoute.value)
       
       // 使用replace避免历史记录问题，并立即恢复滚动位置
       console.log('开始路由跳转...')
       router.replace({
-        name: 'ResourceDetail',
+        name: routeName,
         params: routeParams
       }).then(() => {
         console.log('路由跳转成功')

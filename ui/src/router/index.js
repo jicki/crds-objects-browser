@@ -17,6 +17,11 @@ const routes = [
         component: ResourceList
       },
       {
+        path: 'core/:version/:resource',
+        name: 'CoreResourceDetail',
+        component: () => import('@/views/ResourceDetail.vue')
+      },
+      {
         path: ':group/:version/:resource',
         name: 'ResourceDetail',
         component: () => import('@/views/ResourceDetail.vue')
