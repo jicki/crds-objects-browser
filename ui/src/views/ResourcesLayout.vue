@@ -459,7 +459,15 @@ export default {
 
     // 处理资源点击
     const handleResourceClick = (resource) => {
-      console.log('handleResourceClick 被调用，资源:', resource)
+      console.log('=== handleResourceClick 开始 ===')
+      console.log('点击的资源:', resource)
+      console.log('资源详情:', JSON.stringify(resource, null, 2))
+      
+      // 检查资源对象是否有效
+      if (!resource || !resource.group || !resource.version || !resource.name) {
+        console.error('资源对象无效:', resource)
+        return
+      }
       
       // 记住当前选中的节点
       const currentKey = `${resource.group}/${resource.version}/${resource.name}`
@@ -495,22 +503,31 @@ export default {
       
       // 先选择资源
       console.log('调用 store.dispatch selectResource')
-      store.dispatch('selectResource', resource)
+      try {
+        store.dispatch('selectResource', resource)
+        console.log('selectResource 调用成功')
+      } catch (error) {
+        console.error('selectResource 调用失败:', error)
+        return
+      }
       
       // 构建路由参数
       const routeParams = {
-        group: resource.group,
+        group: resource.group || 'core',
         version: resource.version,
         resource: resource.name
       }
       console.log('准备跳转路由，参数:', routeParams)
+      console.log('当前路由:', router.currentRoute.value)
       
       // 使用replace避免历史记录问题，并立即恢复滚动位置
+      console.log('开始路由跳转...')
       router.replace({
         name: 'ResourceDetail',
         params: routeParams
       }).then(() => {
         console.log('路由跳转成功')
+        console.log('跳转后的路由:', router.currentRoute.value)
         // 路由跳转完成后立即恢复滚动位置
         setTimeout(() => {
           const savedScrollTop = localStorage.getItem('resourcesListScrollTop')
@@ -525,7 +542,11 @@ export default {
         }, 50)
       }).catch(error => {
         console.error('路由跳转失败:', error)
+        console.error('错误详情:', error.message)
+        console.error('错误堆栈:', error.stack)
       })
+      
+      console.log('=== handleResourceClick 结束 ===')
     }
 
     // 过滤节点的方法

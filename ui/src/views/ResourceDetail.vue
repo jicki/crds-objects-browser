@@ -299,17 +299,27 @@ export default {
     // 路由参数变化时加载资源
     const loadResourceFromRoute = () => {
       const { group, version, resource } = route.params
+      console.log('=== loadResourceFromRoute 开始 ===')
+      console.log('路由参数:', { group, version, resource })
+      console.log('当前路由:', route)
+      
       if (group && version && resource) {
         console.log('loadResourceFromRoute 被调用，参数:', { group, version, resource })
         console.log('当前 store.state.resources:', store.state.resources)
         console.log('当前 store.state.resources 长度:', store.state.resources ? store.state.resources.length : 'null/undefined')
+        console.log('当前 selectedResource:', store.state.selectedResource)
         
         // 查找资源的函数
         const findAndSelectResource = () => {
+          console.log('开始查找资源...')
+          // 处理group参数：如果是'core'，则转换为空字符串
+          const searchGroup = group === 'core' ? '' : group
+          
           const resourceItem = store.state.resources.find(r => 
-            r.group === group && r.version === version && r.name === resource
+            r.group === searchGroup && r.version === version && r.name === resource
           )
           
+          console.log('查找条件:', { searchGroup, version, resource })
           console.log('查找到的资源:', resourceItem)
           
           if (resourceItem) {
@@ -317,13 +327,23 @@ export default {
             store.dispatch('selectResource', resourceItem)
             fetchData()
             return true
+          } else {
+            console.log('未找到匹配的资源')
+            console.log('可用资源列表:')
+            if (store.state.resources) {
+              store.state.resources.forEach((r, index) => {
+                console.log(`  ${index}: ${r.group}/${r.version}/${r.name}`)
+              })
+            }
           }
           return false
         }
         
         // 如果资源数据已经加载，直接查找
         if (store.state.resources && store.state.resources.length > 0) {
+          console.log('资源数据已加载，直接查找')
           if (findAndSelectResource()) {
+            console.log('=== loadResourceFromRoute 成功结束 ===')
             return
           }
         }
@@ -335,7 +355,9 @@ export default {
         const unwatch = watch(() => store.state.resources, (resources) => {
           console.log('监听到资源数据变化:', resources ? resources.length : 'null/undefined')
           if (resources && resources.length > 0) {
+            console.log('资源数据已加载，尝试查找资源')
             if (findAndSelectResource()) {
+              console.log('找到资源，停止监听')
               unwatch() // 停止监听
             }
           }
@@ -352,7 +374,11 @@ export default {
           unwatch()
           console.log('loadResourceFromRoute 超时，停止等待')
         }, 10000) // 10秒超时
+      } else {
+        console.log('路由参数不完整，跳过加载')
       }
+      
+      console.log('=== loadResourceFromRoute 结束 ===')
     }
 
     // 获取数据
@@ -584,8 +610,18 @@ export default {
 
     // 组件挂载时，如果有参数则加载资源
     onMounted(() => {
+      console.log('=== ResourceDetail 组件挂载 ===')
+      console.log('当前路由参数:', route.params)
+      console.log('当前 store 状态:')
+      console.log('  - resources:', store.state.resources ? store.state.resources.length : 'null/undefined')
+      console.log('  - selectedResource:', store.state.selectedResource)
+      console.log('  - loading:', store.state.loading)
+      
       if (route.params.resource) {
+        console.log('检测到路由参数，调用 loadResourceFromRoute')
         loadResourceFromRoute()
+      } else {
+        console.log('没有路由参数，跳过加载')
       }
     })
 
