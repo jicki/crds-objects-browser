@@ -149,32 +149,71 @@ export default createStore({
     
     // 获取资源对象
     async fetchResourceObjects({ commit, state }) {
-      if (!state.selectedResource) return
+      if (!state.selectedResource) {
+        console.log('fetchResourceObjects: 没有选中的资源，跳过')
+        return
+      }
       
       const { group, version, name } = state.selectedResource
       const namespace = state.currentNamespace
       
+      console.log('=== fetchResourceObjects 开始 ===')
+      console.log('选中的资源:', state.selectedResource)
+      console.log('当前命名空间:', namespace)
+      console.log('原始group:', group)
+      console.log('group类型:', typeof group)
+      console.log('group === "":', group === '')
+      console.log('group === undefined:', group === undefined)
+      console.log('group === null:', group === null)
+      
       // 修复group为空字符串时的URL构建问题
       const apiGroup = group || 'core'
+      console.log('处理后的apiGroup:', apiGroup)
       
       commit('setLoading', true)
       commit('setError', null)
       try {
         const url = `${API_URL}/crds/${apiGroup}/${version}/${name}/objects${namespace !== 'all' ? `?namespace=${namespace}` : ''}`
-        console.log('API请求URL:', url)
+        console.log('构建的API请求URL:', url)
+        console.log('开始发送API请求...')
+        
         const response = await axios.get(url)
+        console.log('API响应状态:', response.status)
+        console.log('API响应头:', response.headers)
+        console.log('API响应数据:', response.data)
+        console.log('响应数据类型:', typeof response.data)
+        console.log('响应数据是否为数组:', Array.isArray(response.data))
+        console.log('响应数据长度:', Array.isArray(response.data) ? response.data.length : 'not array')
+        
         if (response.data && Array.isArray(response.data)) {
+          console.log('设置资源对象数据，数量:', response.data.length)
           commit('setResourceObjects', response.data)
+          console.log('资源对象数据设置完成')
         } else {
+          console.warn('API返回的数据不是数组或为空:', response.data)
           // 如果没有数据，设置空数组
           commit('setResourceObjects', [])
         }
       } catch (error) {
-        console.warn('获取资源对象失败，使用空列表：', error.response?.data?.error || error.message)
-        // 不显示错误信息，只设置空的对象列表
+        console.error('=== fetchResourceObjects 错误 ===')
+        console.error('错误对象:', error)
+        console.error('错误消息:', error.message)
+        console.error('错误响应:', error.response)
+        console.error('错误状态码:', error.response?.status)
+        console.error('错误响应数据:', error.response?.data)
+        console.error('错误堆栈:', error.stack)
+        
+        // 显示详细的错误信息
+        const errorMessage = error.response?.data?.error || error.message || '未知错误'
+        console.error('获取资源对象失败:', errorMessage)
+        
+        // 设置错误状态，让用户知道发生了什么
+        commit('setError', `获取${name}资源对象失败: ${errorMessage}`)
         commit('setResourceObjects', [])
       } finally {
+        console.log('fetchResourceObjects 完成，设置loading为false')
         commit('setLoading', false)
+        console.log('=== fetchResourceObjects 结束 ===')
       }
     },
     

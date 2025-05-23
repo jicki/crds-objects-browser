@@ -102,9 +102,33 @@
       <!-- 加载中提示 -->
       <el-skeleton v-if="loading" :rows="10" animated />
       
+      <!-- 错误提示 -->
+      <el-alert
+        v-else-if="error"
+        :title="error"
+        type="error"
+        :closable="false"
+        show-icon
+        style="margin-bottom: 15px;"
+      />
+      
       <!-- 资源对象表格 -->
       <div v-else-if="paginatedObjects.length === 0" class="no-objects">
-        <p>没有{{ selectedResource.name }}资源对象</p>
+        <el-empty description="没有找到资源对象">
+          <template #image>
+            <div style="font-size: 60px; color: #909399;">📦</div>
+          </template>
+          <template #description>
+            <p>没有{{ selectedResource.name }}资源对象</p>
+            <p style="color: #909399; font-size: 14px;">
+              可能原因：资源不存在、权限不足或网络问题
+            </p>
+          </template>
+          <el-button type="primary" @click="refreshData">
+            <el-icon><Refresh /></el-icon>
+            重新加载
+          </el-button>
+        </el-empty>
       </div>
       <div v-else class="resource-table">
         <el-table 
@@ -257,7 +281,7 @@
 import { computed, onMounted, onUnmounted, ref, watch, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute } from 'vue-router'
-import { Search, Document, Clock, CopyDocument, View as ViewIcon, SuccessFilled, WarningFilled, CircleCloseFilled, InfoFilled, QuestionFilled } from '@element-plus/icons-vue'
+import { Search, Document, Clock, CopyDocument, View as ViewIcon, SuccessFilled, WarningFilled, CircleCloseFilled, InfoFilled, QuestionFilled, Refresh } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourceDetail',
@@ -271,7 +295,8 @@ export default {
     WarningFilled,
     CircleCloseFilled,
     InfoFilled,
-    QuestionFilled
+    QuestionFilled,
+    Refresh
   },
   setup() {
     const store = useStore()
@@ -289,6 +314,7 @@ export default {
     const selectedResource = computed(() => store.state.selectedResource)
     const resourceObjects = computed(() => store.state.resourceObjects)
     const loading = computed(() => store.state.loading)
+    const error = computed(() => store.state.error)
 
     // 计算资源标题
     const resourceTitle = computed(() => {
@@ -840,6 +866,15 @@ export default {
       }
     }
 
+    const refreshData = () => {
+      // 重置分页和搜索
+      currentPage.value = 1
+      searchQuery.value = ''
+      statusFilter.value = ''
+      // 重新获取数据
+      fetchData()
+    }
+
     return {
       selectedResource,
       resourceObjects,
@@ -872,7 +907,9 @@ export default {
       filterNamespaces,
       filteredNamespaces,
       getNamespaceObjectCount,
-      handleNamespaceDropdownVisible
+      handleNamespaceDropdownVisible,
+      error,
+      refreshData
     }
   }
 }
