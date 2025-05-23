@@ -82,18 +82,29 @@
               <template #default="{ node, data }">
                 <span 
                   class="custom-tree-node"
-                  :class="{ 'clickable': data.resource, 'group-node': !data.resource }"
+                  :class="{ 
+                    'clickable': data.resource, 
+                    'group-node': !data.resource && !data.isResourceGroup,
+                    'resource-group-node': data.isResourceGroup,
+                    'version-node': data.isVersion
+                  }"
                   @click.stop="data.resource && handleResourceClick(data.resource)"
                 >
-                  <el-icon v-if="!data.resource" class="group-icon">
+                  <el-icon v-if="!data.resource && !data.isResourceGroup" class="group-icon">
                     <component :is="getGroupIcon(data)" />
                   </el-icon>
-                  <el-icon v-else class="resource-icon">
+                  <el-icon v-else-if="data.isResourceGroup" class="resource-group-icon">
+                    <Folder />
+                  </el-icon>
+                  <el-icon v-else-if="data.resource" class="resource-icon">
                     <component :is="getResourceIcon(data.resource)" />
                   </el-icon>
                   <span :class="getNodeClass(data)">{{ getDisplayLabel(node.label) }}</span>
-                  <el-tag v-if="data.children" size="small" type="info" class="count-tag">
+                  <el-tag v-if="data.children && !data.isResourceGroup" size="small" type="info" class="count-tag">
                     {{ data.children.length }}
+                  </el-tag>
+                  <el-tag v-else-if="data.children && data.isResourceGroup" size="small" type="warning" class="version-count-tag">
+                    {{ data.children.length }} 版本
                   </el-tag>
                 </span>
               </template>
@@ -218,23 +229,57 @@ export default {
             k8sGroupMap.set(groupName, {
               id: `k8s-${groupName}`,
               label: `📦 ${displayName}`,
-              children: []
+              children: [],
+              resourceMap: new Map() // 用于按资源名分组
             })
           }
           
           const groupNode = k8sGroupMap.get(groupName)
-          groupNode.children.push({
+          const resourceName = resource.name
+          
+          // 检查是否已有同名资源
+          if (!groupNode.resourceMap.has(resourceName)) {
+            groupNode.resourceMap.set(resourceName, {
+              id: `k8s-${groupName}-${resourceName}`,
+              label: resourceName,
+              children: [],
+              isResourceGroup: true
+            })
+          }
+          
+          const resourceGroup = groupNode.resourceMap.get(resourceName)
+          resourceGroup.children.push({
             id: `${resource.group}/${resource.version}/${resource.name}`,
-            label: resource.name,
-            resource: resource
+            label: `${resource.version}`,
+            resource: resource,
+            isVersion: true
           })
         })
         
-        // 添加K8s资源组到结果
+        // 处理K8s资源组
         Array.from(k8sGroupMap.values())
           .sort((a, b) => a.label.localeCompare(b.label))
           .forEach(group => {
-            group.children.sort((a, b) => a.label.localeCompare(b.label))
+            // 将resourceMap转换为children数组
+            group.children = Array.from(group.resourceMap.values())
+              .sort((a, b) => a.label.localeCompare(b.label))
+              .map(resourceGroup => {
+                // 如果只有一个版本，直接显示资源
+                if (resourceGroup.children.length === 1) {
+                  const singleVersion = resourceGroup.children[0]
+                  return {
+                    id: singleVersion.id,
+                    label: `${resourceGroup.label} (${singleVersion.label})`,
+                    resource: singleVersion.resource
+                  }
+                } else {
+                  // 多个版本，显示为子节点
+                  resourceGroup.children.sort((a, b) => b.label.localeCompare(a.label)) // 版本倒序
+                  return resourceGroup
+                }
+              })
+            
+            delete group.resourceMap // 清理临时属性
             result.push(group)
           })
       }
@@ -250,23 +295,57 @@ export default {
             crdGroupMap.set(groupName, {
               id: `crd-${groupName}`,
               label: `🔧 ${groupName}`,
-              children: []
+              children: [],
+              resourceMap: new Map()
             })
           }
           
           const groupNode = crdGroupMap.get(groupName)
-          groupNode.children.push({
+          const resourceName = resource.name
+          
+          // 检查是否已有同名资源
+          if (!groupNode.resourceMap.has(resourceName)) {
+            groupNode.resourceMap.set(resourceName, {
+              id: `crd-${groupName}-${resourceName}`,
+              label: resourceName,
+              children: [],
+              isResourceGroup: true
+            })
+          }
+          
+          const resourceGroup = groupNode.resourceMap.get(resourceName)
+          resourceGroup.children.push({
             id: `${resource.group}/${resource.version}/${resource.name}`,
-            label: resource.name,
-            resource: resource
+            label: `${resource.version}`,
+            resource: resource,
+            isVersion: true
           })
         })
         
-        // 添加CRD资源组到结果
+        // 处理CRD资源组
         Array.from(crdGroupMap.values())
           .sort((a, b) => a.label.localeCompare(b.label))
           .forEach(group => {
-            group.children.sort((a, b) => a.label.localeCompare(b.label))
+            // 将resourceMap转换为children数组
+            group.children = Array.from(group.resourceMap.values())
+              .sort((a, b) => a.label.localeCompare(b.label))
+              .map(resourceGroup => {
+                // 如果只有一个版本，直接显示资源
+                if (resourceGroup.children.length === 1) {
+                  const singleVersion = resourceGroup.children[0]
+                  return {
+                    id: singleVersion.id,
+                    label: `${resourceGroup.label} (${singleVersion.label})`,
+                    resource: singleVersion.resource
+                  }
+                } else {
+                  // 多个版本，显示为子节点
+                  resourceGroup.children.sort((a, b) => b.label.localeCompare(a.label)) // 版本倒序
+                  return resourceGroup
+                }
+              })
+            
+            delete group.resourceMap // 清理临时属性
             result.push(group)
           })
       }
@@ -480,7 +559,11 @@ export default {
 
     // 获取节点样式类
     const getNodeClass = (data) => {
-      if (!data.resource) {
+      if (data.isResourceGroup) {
+        return 'resource-group-label'
+      } else if (data.isVersion) {
+        return 'version-label'
+      } else if (!data.resource) {
         return data.label.includes('📦') ? 'k8s-group-label' : 'crd-group-label'
       }
       return 'resource-label'
@@ -648,6 +731,11 @@ export default {
   font-size: 14px;
 }
 
+.resource-group-icon {
+  color: #e6a23c;
+  font-size: 14px;
+}
+
 .k8s-group-label {
   font-weight: 600;
   color: #409eff;
@@ -660,9 +748,21 @@ export default {
   font-size: 14px;
 }
 
+.resource-group-label {
+  font-weight: 500;
+  color: #606266;
+  font-size: 13px;
+}
+
 .resource-label {
   color: #606266;
   font-size: 13px;
+}
+
+.version-label {
+  color: #909399;
+  font-size: 12px;
+  font-style: italic;
 }
 
 .count-tag {
@@ -670,6 +770,13 @@ export default {
   font-size: 11px;
   padding: 2px 6px;
   border-radius: 10px;
+}
+
+.version-count-tag {
+  margin-left: auto;
+  font-size: 10px;
+  padding: 1px 4px;
+  border-radius: 8px;
 }
 
 /* 树形组件样式优化 */
