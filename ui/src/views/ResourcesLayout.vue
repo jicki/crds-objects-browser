@@ -26,10 +26,22 @@
               show-icon
               style="margin-bottom: 15px;"
             />
+            
+            <!-- 调试信息 -->
+            <div style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; font-size: 12px;">
+              <div>Loading: {{ loading }}</div>
+              <div>Error: {{ error }}</div>
+              <div>Resources count: {{ sortedResources ? sortedResources.length : 0 }}</div>
+              <div>Tree count: {{ resourcesTree ? resourcesTree.length : 0 }}</div>
+              <button @click="refreshData" style="margin-top: 5px; padding: 5px 10px; font-size: 12px;">
+                手动刷新数据
+              </button>
+            </div>
+            
             <el-skeleton v-if="loading" :rows="6" animated />
             <el-empty v-else-if="!resourcesTree.length" description="暂无资源">
               <template #image>
-                <el-icon :size="60"><Box /></el-icon>
+                <div style="font-size: 60px; color: #909399;">📦</div>
               </template>
             </el-empty>
             <el-tree
@@ -39,14 +51,14 @@
               @node-click="handleNodeClick"
               node-key="id"
               :filter-node-method="filterNode"
-              ref="resourcesTree"
+              ref="resourcesTreeRef"
               highlight-current
               default-expand-all
             >
               <template #default="{ node, data }">
                 <span class="custom-tree-node">
-                  <el-icon v-if="!data.resource"><Folder /></el-icon>
-                  <el-icon v-else><Document /></el-icon>
+                  <span v-if="!data.resource">📁</span>
+                  <span v-else>📄</span>
                   <span>{{ node.label }}</span>
                 </span>
               </template>
@@ -67,15 +79,12 @@
 import { computed, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
-import { Search, Box, Folder, Document } from '@element-plus/icons-vue'
+import { Search } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourcesLayout',
   components: {
-    Search,
-    Box,
-    Folder,
-    Document
+    Search
   },
   setup() {
     const store = useStore()
@@ -95,6 +104,12 @@ export default {
 
     // 将资源列表转换为树形结构
     const buildResourcesTree = (resources) => {
+      // 确保resources是数组
+      if (!resources || !Array.isArray(resources) || resources.length === 0) {
+        console.log('buildResourcesTree: 资源为空或不是数组')
+        return []
+      }
+      
       const groupMap = new Map()
       
       resources.forEach(resource => {
@@ -132,8 +147,33 @@ export default {
     
     // 监听资源列表变化，重建树形结构
     watch(sortedResources, (resources) => {
-      resourcesTree.value = buildResourcesTree(resources)
-    })
+      console.log('sortedResources 变化:', resources)
+      console.log('资源数量:', resources ? resources.length : 0)
+      
+      // 确保resources是有效的数组
+      if (resources && Array.isArray(resources) && resources.length > 0) {
+        const newTree = buildResourcesTree(resources)
+        resourcesTree.value = newTree
+        console.log('构建的树结构:', newTree)
+      } else {
+        resourcesTree.value = []
+        console.log('resources为空或无效，设置树结构为空数组')
+      }
+    }, { immediate: true, deep: true })
+
+    // 监听store状态变化
+    watch(() => store.state.resources, (resources) => {
+      console.log('store.state.resources 变化:', resources)
+      console.log('原始资源数量:', resources ? resources.length : 0)
+      
+      // 强制触发computed重新计算
+      if (resources && Array.isArray(resources) && resources.length > 0) {
+        console.log('检测到资源数据，强制更新...')
+        // 触发getter重新计算
+        const sorted = store.getters.sortedResources
+        console.log('重新获取的sortedResources长度:', sorted ? sorted.length : 0)
+      }
+    }, { immediate: true, deep: true })
 
     // 处理树节点点击
     const handleNodeClick = (node) => {
@@ -156,18 +196,25 @@ export default {
       return data.label.toLowerCase().includes(value.toLowerCase())
     }
 
+    const refreshData = () => {
+      store.dispatch('fetchResources')
+      store.dispatch('fetchNamespaces')
+    }
+
     return {
       searchQuery,
       resourcesTree,
       resourcesTreeRef,
       loading,
       error,
+      sortedResources,
       defaultProps: {
         children: 'children',
         label: 'label'
       },
       handleNodeClick,
-      filterNode
+      filterNode,
+      refreshData
     }
   }
 }

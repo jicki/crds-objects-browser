@@ -363,6 +363,11 @@ func (c *Client) GetCRDs() ([]CRDResource, error) {
 				continue
 			}
 
+			// 排除已弃用的资源，避免Kubernetes警告
+			if isDeprecatedResource(r.Name, gv.Group, gv.Version) {
+				continue
+			}
+
 			crds = append(crds, CRDResource{
 				Group:      gv.Group,
 				Version:    gv.Version,
@@ -402,12 +407,47 @@ func isSpecialResource(name, group string) bool {
 			"pods",
 			"nodes",
 		},
+		// 排除已弃用的资源，避免Kubernetes警告
+		"policy": {
+			"podsecuritypolicies", // 在v1.21+中已弃用，在v1.25+中不可用
+		},
+		"extensions": {
+			"podsecuritypolicies", // 也可能在extensions组中
+		},
 	}
 
 	if resources, ok := specialResources[group]; ok {
 		for _, r := range resources {
 			if r == name {
 				return true
+			}
+		}
+	}
+	return false
+}
+
+// isDeprecatedResource 检查是否为已弃用的资源
+func isDeprecatedResource(name, group, version string) bool {
+	// 已弃用的资源列表
+	deprecatedResources := map[string]map[string][]string{
+		"policy": {
+			"v1beta1": {"podsecuritypolicies"},
+		},
+		"extensions": {
+			"v1beta1": {"podsecuritypolicies", "deployments", "replicasets", "daemonsets"},
+		},
+		"apps": {
+			"v1beta1": {"deployments", "replicasets", "daemonsets"},
+			"v1beta2": {"deployments", "replicasets", "daemonsets"},
+		},
+	}
+
+	if groupMap, ok := deprecatedResources[group]; ok {
+		if versionList, ok := groupMap[version]; ok {
+			for _, r := range versionList {
+				if r == name {
+					return true
+				}
 			}
 		}
 	}

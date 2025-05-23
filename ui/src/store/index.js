@@ -17,18 +17,43 @@ export default createStore({
   },
   getters: {
     sortedResources(state) {
-      return [...state.resources].sort((a, b) => {
+      console.log('sortedResources getter 被调用')
+      console.log('state.resources:', state.resources)
+      console.log('state.resources 类型:', typeof state.resources)
+      console.log('state.resources 是否为数组:', Array.isArray(state.resources))
+      console.log('state.resources 长度:', state.resources ? state.resources.length : 'null/undefined')
+      
+      // 确保总是返回数组
+      if (!state.resources || !Array.isArray(state.resources)) {
+        console.warn('state.resources 不是数组，返回空数组')
+        return []
+      }
+      
+      const sorted = [...state.resources].sort((a, b) => {
         if (a.group < b.group) return -1
         if (a.group > b.group) return 1
         if (a.name < b.name) return -1
         if (a.name > b.name) return 1
         return 0
       })
+      
+      console.log('排序后的资源数量:', sorted.length)
+      return sorted
     }
   },
   mutations: {
     setResources(state, resources) {
-      state.resources = resources
+      console.log('setResources mutation 被调用')
+      console.log('传入的 resources:', resources)
+      console.log('传入的 resources 类型:', typeof resources)
+      console.log('传入的 resources 是否为数组:', Array.isArray(resources))
+      console.log('传入的 resources 长度:', resources ? resources.length : 'null/undefined')
+      
+      // 确保响应性更新
+      state.resources = Array.isArray(resources) ? [...resources] : []
+      
+      console.log('设置后的 state.resources:', state.resources)
+      console.log('设置后的 state.resources 长度:', state.resources ? state.resources.length : 'null/undefined')
     },
     setNamespaces(state, namespaces) {
       state.namespaces = namespaces
@@ -58,16 +83,37 @@ export default createStore({
       commit('setLoading', true)
       commit('setError', null)
       try {
-        const response = await axios.get(`${API_URL}/crds`)
-        if (response.data) {
+        const url = `${API_URL}/crds`
+        console.log('开始获取CRD资源...')
+        console.log('请求URL:', url)
+        console.log('API_URL:', API_URL)
+        console.log('window.location.origin:', window.location.origin)
+        
+        const response = await axios.get(url)
+        console.log('API响应:', response)
+        console.log('响应状态:', response.status)
+        console.log('响应头:', response.headers)
+        console.log('响应数据:', response.data)
+        console.log('响应数据类型:', typeof response.data)
+        console.log('响应数据长度:', Array.isArray(response.data) ? response.data.length : 'not array')
+        
+        if (response.data && Array.isArray(response.data)) {
+          console.log('设置资源数据:', response.data.length, '个资源')
+          console.log('即将调用 setResources mutation')
           commit('setResources', response.data)
+          console.log('setResources mutation 调用完成')
         } else {
-          throw new Error('No data received')
+          console.error('响应数据格式不正确:', response.data)
+          throw new Error('No valid data received')
         }
       } catch (error) {
         console.error('Failed to fetch resources:', error)
+        console.error('错误详情:', error.response)
+        console.error('错误消息:', error.message)
+        console.error('错误堆栈:', error.stack)
         commit('setError', '获取资源列表失败：' + (error.response?.data?.error || error.message))
       } finally {
+        console.log('设置 loading 为 false')
         commit('setLoading', false)
       }
     },
