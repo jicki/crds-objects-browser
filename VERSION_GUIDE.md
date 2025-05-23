@@ -67,4 +67,64 @@ Makefile中的VERSION变量会自动从Git标签获取版本信息：
 VERSION := $(shell git describe --tags --always --dirty | sed 's/-g[a-f0-9]*-dirty//' | sed 's/-g[a-f0-9]*$$//')
 ```
 
-这确保了版本信息的一致性和自动化。 
+这确保了版本信息的一致性和自动化。
+
+## 健康检查端点
+
+应用提供了标准的Kubernetes健康检查端点：
+
+### 端点说明
+
+- **`/healthz`** - 健康检查端点
+  - 用途：基本健康状态检查
+  - 返回：服务基本状态信息
+
+- **`/readyz`** - 就绪检查端点
+  - 用途：检查服务是否准备好接收流量
+  - 返回：服务就绪状态，包括缓存初始化状态
+
+- **`/livez`** - 存活检查端点
+  - 用途：检查服务是否仍在运行
+  - 返回：服务存活状态
+
+### 使用示例
+
+```bash
+# 检查服务健康状态
+curl http://localhost:8080/healthz
+
+# 检查服务就绪状态
+curl http://localhost:8080/readyz
+
+# 检查服务存活状态
+curl http://localhost:8080/livez
+```
+
+### Kubernetes配置
+
+在Kubernetes部署中使用健康检查：
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: 8080
+  initialDelaySeconds: 5
+  periodSeconds: 5
+
+startupProbe:
+  httpGet:
+    path: /healthz
+    port: 8080
+  initialDelaySeconds: 10
+  periodSeconds: 5
+```
+
+这些端点确保了应用在Kubernetes环境中的可靠性和可观测性。 

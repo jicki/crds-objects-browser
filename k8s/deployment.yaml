@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: crds-objects-browser
+  namespace: crds-browser
+  labels:
+    app: crds-objects-browser
+    version: v0.3.4-2
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: crds-objects-browser
+  template:
+    metadata:
+      labels:
+        app: crds-objects-browser
+        version: v0.3.4-2
+    spec:
+      serviceAccountName: crds-objects-browser
+      containers:
+      - name: crds-objects-browser
+        image: IMAGE_PLACEHOLDER
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: http
+          protocol: TCP
+        env:
+        - name: GIN_MODE
+          value: "release"
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        # 健康检查配置
+        livenessProbe:
+          httpGet:
+            path: /livez
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          successThreshold: 1
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+            scheme: HTTP
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          successThreshold: 1
+          failureThreshold: 30
+        volumeMounts:
+        - name: kubeconfig
+          mountPath: /root/.kube
+          readOnly: true
+      volumes:
+      - name: kubeconfig
+        secret:
+          secretName: kubeconfig
+          defaultMode: 0600
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30 
