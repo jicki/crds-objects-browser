@@ -154,10 +154,14 @@ export default createStore({
       const { group, version, name } = state.selectedResource
       const namespace = state.currentNamespace
       
+      // 修复group为空字符串时的URL构建问题
+      const apiGroup = group || 'core'
+      
       commit('setLoading', true)
       commit('setError', null)
       try {
-        const url = `${API_URL}/crds/${group}/${version}/${name}/objects${namespace !== 'all' ? `?namespace=${namespace}` : ''}`
+        const url = `${API_URL}/crds/${apiGroup}/${version}/${name}/objects${namespace !== 'all' ? `?namespace=${namespace}` : ''}`
+        console.log('API请求URL:', url)
         const response = await axios.get(url)
         if (response.data && Array.isArray(response.data)) {
           commit('setResourceObjects', response.data)
@@ -180,8 +184,12 @@ export default createStore({
       
       const { group, version, name } = state.selectedResource
       
+      // 修复group为空字符串时的URL构建问题
+      const apiGroup = group || 'core'
+      
       try {
-        const url = `${API_URL}/crds/${group}/${version}/${name}/namespaces`
+        const url = `${API_URL}/crds/${apiGroup}/${version}/${name}/namespaces`
+        console.log('命名空间API请求URL:', url)
         const response = await axios.get(url)
         if (response.data) {
           commit('setResourceNamespaces', response.data)

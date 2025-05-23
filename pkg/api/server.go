@@ -159,6 +159,11 @@ func (s *Server) GetCRDObjects(c *gin.Context) {
 	resource := c.Param("resource")
 	namespace := c.Query("namespace")
 
+	// 修复前端传递的'core'参数，将其转换为空字符串
+	if group == "core" {
+		group = ""
+	}
+
 	objects, err := s.k8sClient.ListCRDObjects(group, version, resource, namespace)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -173,6 +178,11 @@ func (s *Server) GetAvailableNamespaces(c *gin.Context) {
 	group := c.Param("group")
 	version := c.Param("version")
 	resource := c.Param("resource")
+
+	// 修复前端传递的'core'参数，将其转换为空字符串
+	if group == "core" {
+		group = ""
+	}
 
 	namespaces, err := s.k8sClient.GetAllAvailableNamespaces(group, version, resource)
 	if err != nil {

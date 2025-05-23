@@ -279,6 +279,10 @@ export default {
                 }
               })
             
+            // 标记为Kubernetes Core组，默认展开
+            group.isK8sCore = true
+            group.defaultExpanded = true
+            
             delete group.resourceMap // 清理临时属性
             result.push(group)
           })
@@ -385,32 +389,55 @@ export default {
       
       // 恢复展开的节点
       const savedExpandedKeys = localStorage.getItem('expandedKeys')
+      let expandedKeys = []
+      
       if (savedExpandedKeys) {
         try {
-          const expandedKeys = JSON.parse(savedExpandedKeys)
-          console.log('恢复展开状态:', expandedKeys)
-          defaultExpandedKeys.value = expandedKeys
-          
-          // 延迟展开节点，确保DOM已渲染
-          setTimeout(() => {
-            if (resourcesTreeRef.value && expandedKeys.length > 0) {
-              expandedKeys.forEach(key => {
-                const node = resourcesTreeRef.value.getNode(key)
-                if (node) {
-                  node.expanded = true
-                }
-              })
-            }
-          }, 100)
+          expandedKeys = JSON.parse(savedExpandedKeys)
+          console.log('恢复保存的展开状态:', expandedKeys)
         } catch (e) {
           console.warn('恢复展开状态失败:', e)
+          expandedKeys = []
         }
-      } else {
-        // 如果没有保存的状态，默认展开所有组节点
-        const groupKeys = resourcesTree.value.map(group => group.id)
-        defaultExpandedKeys.value = groupKeys
-        console.log('使用默认展开状态:', groupKeys)
       }
+      
+      // 如果没有保存的状态，或者保存的状态为空，使用默认展开策略
+      if (expandedKeys.length === 0) {
+        // 默认展开策略：
+        // 1. 所有Kubernetes Core组（k8s-开头的组）
+        // 2. 前3个CRD组
+        const defaultKeys = []
+        
+        resourcesTree.value.forEach((group, index) => {
+          // Kubernetes Core组始终展开
+          if (group.id.startsWith('k8s-')) {
+            defaultKeys.push(group.id)
+            console.log('默认展开Kubernetes Core组:', group.id)
+          }
+          // 前3个CRD组也展开
+          else if (group.id.startsWith('crd-') && index < 6) { // 考虑到可能有多个k8s组，所以用index < 6
+            defaultKeys.push(group.id)
+            console.log('默认展开CRD组:', group.id)
+          }
+        })
+        
+        expandedKeys = defaultKeys
+        console.log('使用默认展开策略:', expandedKeys)
+      }
+      
+      defaultExpandedKeys.value = expandedKeys
+      
+      // 延迟展开节点，确保DOM已渲染
+      setTimeout(() => {
+        if (resourcesTreeRef.value && expandedKeys.length > 0) {
+          expandedKeys.forEach(key => {
+            const node = resourcesTreeRef.value.getNode(key)
+            if (node) {
+              node.expanded = true
+            }
+          })
+        }
+      }, 100)
       
       // 恢复选中的节点
       const selectedKey = localStorage.getItem('selectedResourceKey')
@@ -488,7 +515,8 @@ export default {
         const traverse = (nodes) => {
           nodes.forEach(node => {
             const treeNode = resourcesTreeRef.value.getNode(node.id)
-            if (treeNode && treeNode.expanded) {
+            // Kubernetes Core组始终保存为展开状态
+            if (node.id.startsWith('k8s-') || (treeNode && treeNode.expanded)) {
               expandedKeys.push(node.id)
             }
             if (node.children) {
@@ -498,7 +526,7 @@ export default {
         }
         traverse(resourcesTree.value)
         localStorage.setItem('expandedKeys', JSON.stringify(expandedKeys))
-        console.log('保存展开状态:', expandedKeys)
+        console.log('保存展开状态（Kubernetes Core组强制展开）:', expandedKeys)
       }
       
       // 先选择资源
