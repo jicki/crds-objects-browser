@@ -459,9 +459,12 @@ export default {
 
     // 处理资源点击
     const handleResourceClick = (resource) => {
+      console.log('handleResourceClick 被调用，资源:', resource)
+      
       // 记住当前选中的节点
       const currentKey = `${resource.group}/${resource.version}/${resource.name}`
       localStorage.setItem('selectedResourceKey', currentKey)
+      console.log('保存选中的资源key:', currentKey)
       
       // 保存当前滚动位置 - 使用更可靠的方法
       const resourcesList = document.querySelector('.resources-list')
@@ -490,17 +493,24 @@ export default {
         console.log('保存展开状态:', expandedKeys)
       }
       
+      // 先选择资源
+      console.log('调用 store.dispatch selectResource')
       store.dispatch('selectResource', resource)
+      
+      // 构建路由参数
+      const routeParams = {
+        group: resource.group,
+        version: resource.version,
+        resource: resource.name
+      }
+      console.log('准备跳转路由，参数:', routeParams)
       
       // 使用replace避免历史记录问题，并立即恢复滚动位置
       router.replace({
         name: 'ResourceDetail',
-        params: {
-          group: resource.group,
-          version: resource.version,
-          resource: resource.name
-        }
+        params: routeParams
       }).then(() => {
+        console.log('路由跳转成功')
         // 路由跳转完成后立即恢复滚动位置
         setTimeout(() => {
           const savedScrollTop = localStorage.getItem('resourcesListScrollTop')
@@ -513,6 +523,8 @@ export default {
             }
           }
         }, 50)
+      }).catch(error => {
+        console.error('路由跳转失败:', error)
       })
     }
 

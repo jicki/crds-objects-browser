@@ -300,15 +300,58 @@ export default {
     const loadResourceFromRoute = () => {
       const { group, version, resource } = route.params
       if (group && version && resource) {
-        // 查找资源
-        const resourceItem = store.state.resources.find(r => 
-          r.group === group && r.version === version && r.name === resource
-        )
+        console.log('loadResourceFromRoute 被调用，参数:', { group, version, resource })
+        console.log('当前 store.state.resources:', store.state.resources)
+        console.log('当前 store.state.resources 长度:', store.state.resources ? store.state.resources.length : 'null/undefined')
         
-        if (resourceItem) {
-          store.dispatch('selectResource', resourceItem)
-          fetchData()
+        // 查找资源的函数
+        const findAndSelectResource = () => {
+          const resourceItem = store.state.resources.find(r => 
+            r.group === group && r.version === version && r.name === resource
+          )
+          
+          console.log('查找到的资源:', resourceItem)
+          
+          if (resourceItem) {
+            console.log('找到资源，选择资源:', resourceItem)
+            store.dispatch('selectResource', resourceItem)
+            fetchData()
+            return true
+          }
+          return false
         }
+        
+        // 如果资源数据已经加载，直接查找
+        if (store.state.resources && store.state.resources.length > 0) {
+          if (findAndSelectResource()) {
+            return
+          }
+        }
+        
+        // 如果资源数据还没有加载，等待加载完成
+        console.log('资源数据未加载，等待加载完成...')
+        
+        // 监听资源数据变化
+        const unwatch = watch(() => store.state.resources, (resources) => {
+          console.log('监听到资源数据变化:', resources ? resources.length : 'null/undefined')
+          if (resources && resources.length > 0) {
+            if (findAndSelectResource()) {
+              unwatch() // 停止监听
+            }
+          }
+        }, { immediate: true })
+        
+        // 如果资源数据还没有开始加载，主动触发加载
+        if (!store.state.resources || store.state.resources.length === 0) {
+          console.log('主动触发资源数据加载')
+          store.dispatch('fetchResources')
+        }
+        
+        // 设置超时，避免无限等待
+        setTimeout(() => {
+          unwatch()
+          console.log('loadResourceFromRoute 超时，停止等待')
+        }, 10000) // 10秒超时
       }
     }
 
