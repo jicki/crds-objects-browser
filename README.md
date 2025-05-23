@@ -119,18 +119,6 @@ kubectl get pods -l app=crds-browser
 kubectl port-forward svc/crds-browser 8080:80
 ```
 
-#### 方式二：使用 Helm
-
-```bash
-# 添加Helm仓库
-helm repo add crds-browser https://your-org.github.io/crds-browser
-
-# 安装应用
-helm install crds-browser crds-browser/crds-browser \
-  --namespace crds-browser \
-  --create-namespace
-```
-
 ### 🔧 配置选项
 
 #### 环境变量
