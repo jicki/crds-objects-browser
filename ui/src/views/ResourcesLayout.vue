@@ -501,6 +501,12 @@ export default {
       localStorage.setItem('selectedResourceKey', currentKey)
       console.log('保存选中的资源key:', currentKey)
       
+      // 立即设置树形组件的当前选中项
+      if (resourcesTreeRef.value) {
+        resourcesTreeRef.value.setCurrentKey(currentKey)
+        console.log('设置树形组件当前选中项:', currentKey)
+      }
+      
       // 保存当前滚动位置 - 使用更可靠的方法
       const resourcesList = document.querySelector('.resources-list')
       if (resourcesList) {
@@ -570,6 +576,15 @@ export default {
       }).then(() => {
         console.log('路由跳转成功')
         console.log('跳转后的路由:', router.currentRoute.value)
+        
+        // 确保选中状态在路由跳转后仍然保持
+        nextTick(() => {
+          if (resourcesTreeRef.value) {
+            resourcesTreeRef.value.setCurrentKey(currentKey)
+            console.log('路由跳转后重新设置选中项:', currentKey)
+          }
+        })
+        
         // 路由跳转完成后立即恢复滚动位置
         setTimeout(() => {
           const savedScrollTop = localStorage.getItem('resourcesListScrollTop')
@@ -764,12 +779,139 @@ export default {
 }
 
 :deep(.el-tree-node__content) {
-  height: 32px;
+  height: 40px;
+  border-radius: 8px;
+  margin: 3px 0;
+  padding: 0 8px;
+  transition: all 0.3s ease;
+  position: relative;
+  overflow: hidden;
 }
 
+:deep(.el-tree-node__content:hover) {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  transform: translateX(6px);
+  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
+  border-left: 4px solid #409eff;
+}
+
+/* 选中状态的强化样式 */
 :deep(.el-tree-node.is-current > .el-tree-node__content) {
-  background-color: #ecf5ff;
+  background: linear-gradient(135deg, #409eff 0%, #67c23a 100%);
+  color: white;
+  box-shadow: 0 6px 20px rgba(64, 158, 255, 0.4);
+  transform: translateX(8px) scale(1.02);
+  border-left: 6px solid #ffffff;
+  font-weight: 600;
+  position: relative;
+}
+
+/* 选中状态的动画效果 */
+:deep(.el-tree-node.is-current > .el-tree-node__content::before) {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* 选中状态下的文字和图标颜色 */
+:deep(.el-tree-node.is-current .k8s-group-label),
+:deep(.el-tree-node.is-current .crd-group-label),
+:deep(.el-tree-node.is-current .resource-group-label),
+:deep(.el-tree-node.is-current .resource-label),
+:deep(.el-tree-node.is-current .version-label) {
+  color: white !important;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+
+:deep(.el-tree-node.is-current .group-icon),
+:deep(.el-tree-node.is-current .resource-icon),
+:deep(.el-tree-node.is-current .resource-group-icon) {
+  color: white !important;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2));
+}
+
+/* 选中状态下的标签样式 */
+:deep(.el-tree-node.is-current .count-tag),
+:deep(.el-tree-node.is-current .version-count-tag) {
+  background: rgba(255,255,255,0.2) !important;
+  color: white !important;
+  border: 1px solid rgba(255,255,255,0.3) !important;
+  backdrop-filter: blur(4px);
+}
+
+/* 展开图标优化 */
+:deep(.el-tree-node__expand-icon) {
   color: #409eff;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+:deep(.el-tree-node__expand-icon.expanded) {
+  transform: rotate(90deg);
+  color: #67c23a;
+}
+
+:deep(.el-tree-node.is-current .el-tree-node__expand-icon) {
+  color: white !important;
+}
+
+/* 焦点状态优化 */
+:deep(.el-tree-node:focus > .el-tree-node__content) {
+  outline: 2px solid #409eff;
+  outline-offset: 2px;
+}
+
+/* 资源组的特殊高亮 */
+:deep(.el-tree-node.is-current > .el-tree-node__content .custom-tree-node.group-node) {
+  font-weight: 700;
+}
+
+/* 可点击资源的悬停效果增强 */
+.custom-tree-node.clickable:hover {
+  background-color: rgba(64, 158, 255, 0.15) !important;
+  border-radius: 6px !important;
+  padding: 6px 12px !important;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.2);
+}
+
+/* 选中的可点击资源 */
+:deep(.el-tree-node.is-current .custom-tree-node.clickable) {
+  background-color: transparent !important;
+  padding: 6px 12px !important;
+}
+
+/* 侧边栏整体优化 */
+.sidebar {
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-right: 1px solid #e2e8f0;
+}
+
+.header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border-bottom: none;
+}
+
+.search-box {
+  background: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+:deep(.el-empty__image) {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: #909399;
 }
 
 .custom-tree-node {
@@ -783,12 +925,6 @@ export default {
 .custom-tree-node.clickable {
   cursor: pointer;
   transition: all 0.2s ease;
-}
-
-.custom-tree-node.clickable:hover {
-  background-color: rgba(64, 158, 255, 0.1);
-  border-radius: 4px;
-  padding: 4px 8px;
 }
 
 .custom-tree-node.group-node {
@@ -852,72 +988,5 @@ export default {
   font-size: 10px;
   padding: 1px 4px;
   border-radius: 8px;
-}
-
-/* 树形组件样式优化 */
-:deep(.el-tree) {
-  background: transparent;
-}
-
-:deep(.el-tree-node__content) {
-  height: 36px;
-  border-radius: 6px;
-  margin: 2px 0;
-  transition: all 0.3s ease;
-}
-
-:deep(.el-tree-node__content:hover) {
-  background-color: #f0f9ff;
-  transform: translateX(4px);
-}
-
-:deep(.el-tree-node.is-current > .el-tree-node__content) {
-  background: linear-gradient(135deg, #409eff 0%, #67c23a 100%);
-  color: white;
-  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.3);
-}
-
-:deep(.el-tree-node.is-current .k8s-group-label),
-:deep(.el-tree-node.is-current .crd-group-label),
-:deep(.el-tree-node.is-current .resource-label) {
-  color: white;
-}
-
-:deep(.el-tree-node.is-current .group-icon),
-:deep(.el-tree-node.is-current .resource-icon) {
-  color: white;
-}
-
-:deep(.el-tree-node__expand-icon) {
-  color: #409eff;
-  font-size: 14px;
-}
-
-:deep(.el-tree-node__expand-icon.expanded) {
-  transform: rotate(90deg);
-}
-
-/* 侧边栏整体优化 */
-.sidebar {
-  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
-  border-right: 1px solid #e2e8f0;
-}
-
-.header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border-bottom: none;
-}
-
-.search-box {
-  background: rgba(255, 255, 255, 0.9);
-  border-bottom: 1px solid #e2e8f0;
-}
-
-:deep(.el-empty__image) {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: #909399;
 }
 </style> 
