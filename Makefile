@@ -2,7 +2,7 @@
 
 # 项目信息
 PROJECT_NAME := crds-objects-browser
-VERSION := $(shell git describe --tags --always --dirty | sed 's/-g[a-f0-9]*-dirty//' | sed 's/-g[a-f0-9]*//')
+VERSION := $(shell git describe --tags --always --dirty | sed 's/-g[a-f0-9]*-dirty//' | sed 's/-g[a-f0-9]*$$//')
 COMMIT := $(shell git rev-parse --short HEAD)
 BUILD_TIME := $(shell date -u '+%Y-%m-%d_%H:%M:%S')
 
