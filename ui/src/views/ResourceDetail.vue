@@ -15,15 +15,28 @@
             placeholder="选择命名空间" 
             @change="handleNamespaceChange"
             size="large"
-            style="width: 200px;"
+            style="width: 250px;"
+            filterable
+            clearable
+            :filter-method="filterNamespaces"
+            :no-data-text="namespaceSearchQuery ? '未找到匹配的命名空间' : '暂无命名空间'"
+            @visible-change="handleNamespaceDropdownVisible"
           >
             <el-option key="all" label="🌐 所有命名空间" value="all" />
             <el-option
-              v-for="ns in availableNamespaces"
+              v-for="ns in filteredNamespaces"
               :key="ns"
               :label="`📁 ${ns}`"
               :value="ns"
-            />
+            >
+              <div class="namespace-option">
+                <span class="namespace-icon">📁</span>
+                <span class="namespace-name">{{ ns }}</span>
+                <el-tag v-if="getNamespaceObjectCount(ns) > 0" size="small" type="info" class="namespace-count">
+                  {{ getNamespaceObjectCount(ns) }}
+                </el-tag>
+              </div>
+            </el-option>
           </el-select>
         </div>
       </div>
@@ -152,6 +165,47 @@
             </template>
           </el-table-column>
           
+          <!-- Pod资源的Request/Limits列 -->
+          <el-table-column 
+            v-if="selectedResource && selectedResource.kind === 'Pod'" 
+            label="Request/Limits" 
+            width="280" 
+            align="left"
+          >
+            <template #default="scope">
+              <div v-if="getPodResourceInfo(scope.row)" class="resource-info">
+                <div v-for="(container, index) in getPodResourceInfo(scope.row)" :key="index" class="container-resources">
+                  <div class="container-name">{{ container.name }}</div>
+                  <div class="resource-details">
+                    <div v-if="container.requests" class="resource-row">
+                      <span class="resource-label">Request:</span>
+                      <div class="resource-values">
+                        <el-tag v-if="container.requests.cpu" size="small" type="info" class="resource-tag">
+                          CPU: {{ container.requests.cpu }}
+                        </el-tag>
+                        <el-tag v-if="container.requests.memory" size="small" type="info" class="resource-tag">
+                          内存: {{ container.requests.memory }}
+                        </el-tag>
+                      </div>
+                    </div>
+                    <div v-if="container.limits" class="resource-row">
+                      <span class="resource-label">Limits:</span>
+                      <div class="resource-values">
+                        <el-tag v-if="container.limits.cpu" size="small" type="warning" class="resource-tag">
+                          CPU: {{ container.limits.cpu }}
+                        </el-tag>
+                        <el-tag v-if="container.limits.memory" size="small" type="warning" class="resource-tag">
+                          内存: {{ container.limits.memory }}
+                        </el-tag>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <span v-else class="no-resource-info">-</span>
+            </template>
+          </el-table-column>
+          
           <!-- 操作列 -->
           <el-table-column label="操作" width="100" align="center" fixed="right">
             <template #default="scope">
@@ -228,6 +282,8 @@ export default {
     const pageSize = ref(100)
     const searchQuery = ref('')
     const statusFilter = ref('')
+    const namespaceSearchQuery = ref('')
+    const namespaceDropdownVisible = ref(false)
 
     // 从Store获取数据
     const selectedResource = computed(() => store.state.selectedResource)
@@ -430,6 +486,39 @@ export default {
       }
     }
 
+    // 获取Pod资源信息
+    const getPodResourceInfo = (pod) => {
+      if (!pod.spec || !pod.spec.containers) {
+        return null
+      }
+      
+      return pod.spec.containers.map(container => {
+        const containerInfo = {
+          name: container.name,
+          requests: null,
+          limits: null
+        }
+        
+        if (container.resources) {
+          if (container.resources.requests) {
+            containerInfo.requests = {
+              cpu: container.resources.requests.cpu || null,
+              memory: container.resources.requests.memory || null
+            }
+          }
+          
+          if (container.resources.limits) {
+            containerInfo.limits = {
+              cpu: container.resources.limits.cpu || null,
+              memory: container.resources.limits.memory || null
+            }
+          }
+        }
+        
+        return containerInfo
+      }).filter(container => container.requests || container.limits) // 只返回有资源配置的容器
+    }
+
     // 监听路由变化
     watch(() => route.params, loadResourceFromRoute, { immediate: true })
 
@@ -626,6 +715,41 @@ export default {
       saveScrollPosition()
     })
 
+    // 过滤命名空间
+    const filterNamespaces = (query) => {
+      namespaceSearchQuery.value = query
+    }
+
+    // 计算过滤后的命名空间列表
+    const filteredNamespaces = computed(() => {
+      if (!namespaceSearchQuery.value) {
+        return availableNamespaces.value
+      }
+      
+      const query = namespaceSearchQuery.value.toLowerCase()
+      return availableNamespaces.value.filter(ns => 
+        ns.toLowerCase().includes(query)
+      )
+    })
+
+    // 获取命名空间中的对象数量
+    const getNamespaceObjectCount = (namespace) => {
+      if (!resourceObjects.value || resourceObjects.value.length === 0) {
+        return 0
+      }
+      
+      return resourceObjects.value.filter(obj => obj.namespace === namespace).length
+    }
+
+    // 处理命名空间下拉框显示/隐藏
+    const handleNamespaceDropdownVisible = (visible) => {
+      namespaceDropdownVisible.value = visible
+      if (!visible) {
+        // 下拉框关闭时清空搜索查询
+        namespaceSearchQuery.value = ''
+      }
+    }
+
     return {
       selectedResource,
       resourceObjects,
@@ -651,7 +775,14 @@ export default {
       handleSearch,
       statusFilter,
       handleStatusFilter,
-      availableStatuses
+      availableStatuses,
+      getPodResourceInfo,
+      namespaceSearchQuery,
+      namespaceDropdownVisible,
+      filterNamespaces,
+      filteredNamespaces,
+      getNamespaceObjectCount,
+      handleNamespaceDropdownVisible
     }
   }
 }
@@ -869,5 +1000,132 @@ export default {
 :deep(.el-tag.el-tag--info.el-tag--dark) {
   background-color: #909399;
   border-color: #909399;
+}
+
+/* Pod资源信息样式 */
+.resource-info {
+  padding: 4px 0;
+}
+
+.container-resources {
+  margin-bottom: 8px;
+  padding: 6px;
+  background-color: #f8f9fa;
+  border-radius: 4px;
+  border-left: 3px solid #409eff;
+}
+
+.container-resources:last-child {
+  margin-bottom: 0;
+}
+
+.container-name {
+  font-weight: 600;
+  color: #303133;
+  font-size: 12px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.container-name::before {
+  content: "📦";
+  margin-right: 4px;
+}
+
+.resource-details {
+  font-size: 11px;
+}
+
+.resource-row {
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.resource-row:last-child {
+  margin-bottom: 0;
+}
+
+.resource-label {
+  font-weight: 500;
+  color: #606266;
+  min-width: 60px;
+  font-size: 11px;
+}
+
+.resource-values {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.resource-tag {
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+  height: auto !important;
+  line-height: 1.2 !important;
+}
+
+.no-resource-info {
+  color: #c0c4cc;
+  font-style: italic;
+}
+
+/* 命名空间选项样式 */
+.namespace-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 2px 0;
+}
+
+.namespace-icon {
+  margin-right: 8px;
+  font-size: 14px;
+}
+
+.namespace-name {
+  flex: 1;
+  font-size: 14px;
+  color: #303133;
+}
+
+.namespace-count {
+  margin-left: 8px;
+  font-size: 11px !important;
+  padding: 1px 6px !important;
+  height: auto !important;
+  line-height: 1.2 !important;
+  border-radius: 10px;
+}
+
+/* 命名空间下拉框样式优化 */
+:deep(.el-select-dropdown__item) {
+  padding: 8px 12px;
+  line-height: 1.4;
+}
+
+:deep(.el-select-dropdown__item:hover) {
+  background-color: #f5f7fa;
+}
+
+:deep(.el-select-dropdown__item.selected) {
+  background-color: #ecf5ff;
+  color: #409eff;
+  font-weight: 500;
+}
+
+/* 命名空间选择器输入框样式 */
+.namespace-selector :deep(.el-input__wrapper) {
+  transition: all 0.3s ease;
+}
+
+.namespace-selector :deep(.el-input__wrapper:focus-within) {
+  border-color: rgba(255, 255, 255, 0.8);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8) inset, 0 0 8px rgba(255, 255, 255, 0.3);
 }
 </style> 
