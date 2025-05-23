@@ -464,7 +464,7 @@ export default {
       console.log('资源详情:', JSON.stringify(resource, null, 2))
       
       // 检查资源对象是否有效
-      if (!resource || !resource.group || !resource.version || !resource.name) {
+      if (!resource || resource.group === undefined || !resource.version || !resource.name) {
         console.error('资源对象无效:', resource)
         return
       }
