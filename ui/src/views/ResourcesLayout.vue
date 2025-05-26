@@ -1,81 +1,53 @@
 <template>
   <div class="resources-layout">
-    <el-container>
-      <el-aside width="300px">
+    <el-container class="main-container">
+      <el-aside :width="sidebarWidth" class="sidebar-container">
         <div class="sidebar">
           <div class="header">
             <h2>Kubernetes CRD 浏览器</h2>
+            <el-button 
+              @click="toggleSidebar" 
+              size="small" 
+              type="text" 
+              class="toggle-btn"
+              :icon="sidebarCollapsed ? 'ArrowRight' : 'ArrowLeft'"
+            />
           </div>
-          <div class="search-box">
+          <div class="search-box" v-show="!sidebarCollapsed">
             <el-input
               v-model="searchQuery"
               placeholder="🔍 搜索资源类型..."
               clearable
-              size="large"
-              style="width: 100%;"
+              size="default"
+              class="search-input"
             >
               <template #prefix>
                 <el-icon><Search /></el-icon>
               </template>
             </el-input>
           </div>
-          <div class="resources-list">
+          <div class="resources-list" v-show="!sidebarCollapsed">
             <el-alert
               v-if="error"
               :title="error"
               type="error"
               :closable="false"
               show-icon
-              style="margin-bottom: 15px;"
+              class="error-alert"
             />
             
-            <!-- 调试信息 -->
-            <div class="debug-info" style="background: #f0f0f0; padding: 10px; margin-bottom: 10px; font-size: 12px; border-radius: 4px;">
-              <div style="color: #606266;">
-                <span style="font-weight: bold;">📊 状态信息</span>
-              </div>
-              <div style="margin-top: 5px;">
-                <span style="color: #909399;">加载状态:</span> 
-                <el-tag :type="loading ? 'warning' : 'success'" size="small">
-                  {{ loading ? '加载中...' : '已完成' }}
-                </el-tag>
-              </div>
-              <div v-if="error" style="margin-top: 5px;">
-                <span style="color: #F56C6C;">⚠️ 错误:</span> 
-                <el-tag type="danger" size="small">{{ error }}</el-tag>
-              </div>
-              <div style="margin-top: 5px;">
-                <span style="color: #67C23A;">📦 原始资源数:</span> 
-                <el-tag type="success" size="small">{{ $store.state.resources ? $store.state.resources.length : 0 }}</el-tag>
-              </div>
-              <div style="margin-top: 5px;">
-                <span style="color: #67C23A;">📦 排序资源数:</span> 
-                <el-tag type="success" size="small">{{ sortedResources ? sortedResources.length : 0 }}</el-tag>
-              </div>
-              <div style="margin-top: 5px;">
-                <span style="color: #409EFF;">🌳 分组数量:</span> 
-                <el-tag type="primary" size="small">{{ resourcesTree ? resourcesTree.length : 0 }}</el-tag>
-              </div>
-              <div style="margin-top: 5px;">
-                <span style="color: #E6A23C;">🔍 搜索查询:</span> 
-                <el-tag type="warning" size="small">{{ searchQuery || '无' }}</el-tag>
-              </div>
-              <div style="margin-top: 5px;">
-                <span style="color: #909399;">📊 Store状态:</span> 
-                <el-tag :type="$store.state.resources ? 'success' : 'danger'" size="small">
-                  {{ $store.state.resources ? '有数据' : '无数据' }}
-                </el-tag>
-              </div>
-              <div style="margin-top: 8px;">
-                <el-button @click="refreshData" size="small" type="primary" plain>
-                  <el-icon><Refresh /></el-icon>
-                  刷新数据
-                </el-button>
-                <el-button @click="debugData" size="small" type="info" plain>
-                  <el-icon><Monitor /></el-icon>
-                  调试数据
-                </el-button>
-              </div>
+            <!-- 简化的状态信息 -->
+            <div class="status-info" v-if="loading || error">
+              <el-tag :type="loading ? 'warning' : 'success'" size="small">
+                {{ loading ? '加载中...' : `${sortedResources?.length || 0} 个资源` }}
+              </el-tag>
+              <el-button 
+                @click="refreshData" 
+                size="small" 
+                type="text" 
+                class="refresh-btn"
+                :icon="Refresh"
+              />
             </div>
             
             <el-skeleton v-if="loading" :rows="6" animated />
@@ -130,8 +102,9 @@
           </div>
         </div>
       </el-aside>
-      <el-container>
-        <el-main>
+      <div class="resize-handle" @mousedown="startResize"></div>
+      <el-container class="content-container">
+        <el-main class="main-content">
           <router-view />
         </el-main>
       </el-container>
@@ -140,10 +113,10 @@
 </template>
 
 <script>
-import { computed, ref, watch, nextTick, onMounted } from 'vue'
+import { computed, ref, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useStore } from 'vuex'
 import { useRouter } from 'vue-router'
-import { Search, Refresh, Box, Setting, Folder, Monitor, Connection, Grid, Document, Key, Link as LinkIcon, Timer, FolderOpened, User, DocumentCopy } from '@element-plus/icons-vue'
+import { Search, Refresh, Box, Setting, Folder, Monitor, Connection, Grid, Document, Key, Link as LinkIcon, Timer, FolderOpened, User, DocumentCopy, ArrowLeft, ArrowRight } from '@element-plus/icons-vue'
 
 export default {
   name: 'ResourcesLayout',
@@ -162,7 +135,9 @@ export default {
     Timer,
     FolderOpened,
     User,
-    DocumentCopy
+    DocumentCopy,
+    ArrowLeft,
+    ArrowRight
   },
   setup() {
     const store = useStore()
@@ -171,6 +146,11 @@ export default {
     const searchQuery = ref('')
     const resourcesTreeRef = ref(null)
     const defaultExpandedKeys = ref([])
+    
+    // 侧边栏状态
+    const sidebarCollapsed = ref(false)
+    const sidebarWidth = ref('320px')
+    const isResizing = ref(false)
 
     // 初始化时加载资源
     store.dispatch('fetchResources')
@@ -791,6 +771,64 @@ export default {
       })
     })
 
+    // 侧边栏控制函数
+    const toggleSidebar = () => {
+      sidebarCollapsed.value = !sidebarCollapsed.value
+      sidebarWidth.value = sidebarCollapsed.value ? '60px' : '320px'
+      localStorage.setItem('sidebarCollapsed', sidebarCollapsed.value.toString())
+    }
+
+    // 拖拽调整侧边栏大小
+    const startResize = (e) => {
+      if (sidebarCollapsed.value) return
+      isResizing.value = true
+      document.addEventListener('mousemove', handleResize)
+      document.addEventListener('mouseup', stopResize)
+      e.preventDefault()
+    }
+
+    const handleResize = (e) => {
+      if (!isResizing.value) return
+      const newWidth = Math.max(200, Math.min(500, e.clientX))
+      sidebarWidth.value = `${newWidth}px`
+      localStorage.setItem('sidebarWidth', sidebarWidth.value)
+    }
+
+    const stopResize = () => {
+      isResizing.value = false
+      document.removeEventListener('mousemove', handleResize)
+      document.removeEventListener('mouseup', stopResize)
+    }
+
+    // 恢复侧边栏状态
+    const restoreSidebarState = () => {
+      const savedCollapsed = localStorage.getItem('sidebarCollapsed')
+      const savedWidth = localStorage.getItem('sidebarWidth')
+      
+      if (savedCollapsed !== null) {
+        sidebarCollapsed.value = savedCollapsed === 'true'
+      }
+      
+      if (savedWidth) {
+        sidebarWidth.value = savedWidth
+      }
+      
+      if (sidebarCollapsed.value) {
+        sidebarWidth.value = '60px'
+      }
+    }
+
+    // 组件挂载时恢复状态
+    onMounted(() => {
+      restoreSidebarState()
+    })
+
+    // 组件卸载时清理事件监听器
+    onUnmounted(() => {
+      document.removeEventListener('mousemove', handleResize)
+      document.removeEventListener('mouseup', stopResize)
+    })
+
     return {
       searchQuery,
       resourcesTree,
@@ -798,6 +836,9 @@ export default {
       loading,
       error,
       sortedResources,
+      sidebarCollapsed,
+      sidebarWidth,
+      isResizing,
       defaultProps: {
         children: 'children',
         label: 'label'
@@ -812,7 +853,10 @@ export default {
       getResourceIcon,
       getNodeClass,
       getDisplayLabel,
-      defaultExpandedKeys
+      defaultExpandedKeys,
+      toggleSidebar,
+      startResize,
+      Refresh
     }
   }
 }
@@ -820,59 +864,178 @@ export default {
 
 <style scoped>
 .resources-layout {
-  height: 100%;
+  height: 100vh;
+  overflow: hidden;
 }
 
-.el-container {
+.main-container {
   height: 100%;
+  position: relative;
 }
 
-.el-aside {
-  background-color: #f5f7fa;
-  border-right: 1px solid #e6e6e6;
+.sidebar-container {
+  background-color: #f8fafc;
+  border-right: 1px solid #e2e8f0;
   height: 100%;
+  transition: width 0.3s ease;
+  position: relative;
+  z-index: 10;
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   height: 100%;
+  overflow: hidden;
 }
 
 .header {
-  padding: 20px;
-  border-bottom: 1px solid #e6e6e6;
+  padding: 16px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 60px;
 }
 
 .header h2 {
   margin: 0;
-  font-size: 18px;
-  color: #303133;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.toggle-btn {
+  color: white !important;
+  padding: 4px !important;
+  min-width: 24px !important;
+  height: 24px !important;
+}
+
+.toggle-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1) !important;
 }
 
 .search-box {
-  padding: 15px;
-  border-bottom: 1px solid #e6e6e6;
+  padding: 12px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.95);
+}
+
+.search-input {
+  width: 100%;
 }
 
 .resources-list {
   flex: 1;
   overflow-y: auto;
-  padding: 15px;
-  scroll-behavior: auto;
+  padding: 12px;
+  scroll-behavior: smooth;
   position: relative;
 }
 
-.el-main {
-  padding: 20px;
-  background-color: #fff;
+.error-alert {
+  margin-bottom: 12px;
+}
+
+.status-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+}
+
+.refresh-btn {
+  padding: 4px !important;
+  min-width: 24px !important;
+  height: 24px !important;
+}
+
+.resize-handle {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  position: relative;
+  z-index: 20;
+  transition: background-color 0.2s ease;
+}
+
+.resize-handle:hover {
+  background-color: #409eff;
+}
+
+.resize-handle:active {
+  background-color: #337ecc;
+}
+
+.content-container {
+  flex: 1;
+  height: 100%;
+  overflow: hidden;
+}
+
+.main-content {
+  padding: 16px 20px;
+  background-color: #ffffff;
+  height: 100%;
+  overflow: auto;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .sidebar-container {
+    position: absolute;
+    left: 0;
+    top: 0;
+    z-index: 1000;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.15);
+  }
+  
+  .header h2 {
+    font-size: 14px;
+  }
+  
+  .search-box {
+    padding: 8px 12px;
+  }
+  
+  .resources-list {
+    padding: 8px;
+  }
+  
+  .main-content {
+    padding: 12px 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .header {
+    padding: 12px 16px;
+    min-height: 50px;
+  }
+  
+  .header h2 {
+    font-size: 13px;
+  }
+  
+  .main-content {
+    padding: 8px 12px;
+  }
 }
 
 :deep(.el-tree-node__content) {
-  height: 40px;
-  border-radius: 8px;
-  margin: 3px 0;
-  padding: 0 8px;
+  height: 36px;
+  border-radius: 6px;
+  margin: 2px 0;
+  padding: 0 6px;
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
@@ -880,18 +1043,18 @@ export default {
 
 :deep(.el-tree-node__content:hover) {
   background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
-  transform: translateX(6px);
-  box-shadow: 0 4px 12px rgba(64, 158, 255, 0.15);
-  border-left: 4px solid #409eff;
+  transform: translateX(4px);
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.15);
+  border-left: 3px solid #409eff;
 }
 
 /* 选中状态的强化样式 */
 :deep(.el-tree-node.is-current > .el-tree-node__content) {
   background: linear-gradient(135deg, #409eff 0%, #67c23a 100%);
   color: white;
-  box-shadow: 0 6px 20px rgba(64, 158, 255, 0.4);
-  transform: translateX(8px) scale(1.02);
-  border-left: 6px solid #ffffff;
+  box-shadow: 0 4px 16px rgba(64, 158, 255, 0.4);
+  transform: translateX(6px) scale(1.01);
+  border-left: 4px solid #ffffff;
   font-weight: 600;
   position: relative;
 }
@@ -1007,9 +1170,10 @@ export default {
 .custom-tree-node {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  padding: 4px 0;
+  padding: 2px 0;
+  font-size: 13px;
 }
 
 .custom-tree-node.clickable {

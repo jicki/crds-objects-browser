@@ -162,6 +162,11 @@ func (s *Server) setupRoutes() {
 		c.File("./test/html/test-frontend-fix.html")
 	})
 
+	// 布局优化测试页面
+	s.router.GET("/test-layout", func(c *gin.Context) {
+		c.File("./test/html/layout-optimization-test.html")
+	})
+
 	// 调试页面（放在静态文件服务之前）
 	s.router.GET("/debug", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")

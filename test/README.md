@@ -12,7 +12,8 @@ test/
 ├── html/                        # HTML测试页面
 │   ├── test-frontend-fix.html   # 前端修复测试页面
 │   ├── debug-frontend.html      # 前端调试页面
-│   └── debug.html               # 系统调试页面
+│   ├── debug.html               # 系统调试页面
+│   └── layout-optimization-test.html  # 布局优化测试页面
 └── reports/                     # 测试报告（自动生成）
     └── (测试报告将在此生成)
 ```
@@ -70,6 +71,15 @@ chmod +x test-performance-fix.sh
 - 缓存状态查看
 - 资源使用统计
 
+#### layout-optimization-test.html
+布局优化测试页面，用于验证界面优化效果。
+
+**测试功能：**
+- 侧边栏自适应宽度验证
+- 折叠和拖拽功能测试
+- 响应式布局检查
+- 性能优化效果验证
+
 ## 🚀 快速开始
 
 ### 1. 运行性能测试
@@ -92,6 +102,9 @@ curl http://localhost:8080/debug-frontend
 
 # 前端修复测试页面
 curl http://localhost:8080/test-fix
+
+# 布局优化测试页面
+curl http://localhost:8080/test-layout
 ```
 
 ### 3. 查看测试结果
