@@ -376,7 +376,15 @@ export default {
     }
 
     // 从Store获取排序后的资源列表
-    const sortedResources = computed(() => store.getters.sortedResources)
+    const sortedResources = computed(() => {
+      // 监听refreshTrigger以确保响应性更新
+      const trigger = store.state.refreshTrigger
+      console.log('🔍 ResourcesLayout sortedResources computed 被调用, trigger:', trigger)
+      const result = store.getters.sortedResources
+      console.log('🔍 computed 返回的结果:', result)
+      console.log('🔍 computed 返回的结果长度:', result ? result.length : 'null/undefined')
+      return result
+    })
     const loading = computed(() => store.state.loading)
     const error = computed(() => store.state.error)
     
@@ -642,6 +650,16 @@ export default {
       console.log('Store resources length:', store.state.resources ? store.state.resources.length : 'null')
       console.log('Store resources type:', typeof store.state.resources)
       console.log('Store resources is array:', Array.isArray(store.state.resources))
+      
+      // 直接调用getter测试
+      console.log('=== 直接调用 store.getters.sortedResources ===')
+      const directGetter = store.getters.sortedResources
+      console.log('Direct getter result:', directGetter)
+      console.log('Direct getter length:', directGetter ? directGetter.length : 'null')
+      console.log('Direct getter type:', typeof directGetter)
+      console.log('Direct getter is array:', Array.isArray(directGetter))
+      
+      console.log('=== computed sortedResources ===')
       console.log('Sorted resources:', sortedResources.value)
       console.log('Sorted resources length:', sortedResources.value ? sortedResources.value.length : 'null')
       console.log('Resources tree:', resourcesTree.value)
@@ -650,12 +668,38 @@ export default {
       console.log('Error:', error.value)
       console.log('Search query:', searchQuery.value)
       
+      // 测试原始数据的前几个元素
+      if (store.state.resources && Array.isArray(store.state.resources) && store.state.resources.length > 0) {
+        console.log('=== 原始数据前3个元素 ===')
+        console.log('First 3 resources:', store.state.resources.slice(0, 3))
+        
+        // 手动测试排序逻辑
+        console.log('=== 手动测试排序逻辑 ===')
+        try {
+          const testSorted = [...store.state.resources].sort((a, b) => {
+            const groupA = a.group || ''
+            const groupB = b.group || ''
+            
+            if (groupA < groupB) return -1
+            if (groupA > groupB) return 1
+            if (a.name < b.name) return -1
+            if (a.name > b.name) return 1
+            return 0
+          })
+          console.log('Manual sort result length:', testSorted.length)
+          console.log('Manual sort first 3:', testSorted.slice(0, 3))
+        } catch (error) {
+          console.error('Manual sort error:', error)
+        }
+      }
+      
       // 测试API调用
       fetch('/api/crds')
         .then(response => response.json())
         .then(data => {
-          console.log('Direct API call result:', data)
-          console.log('Direct API call length:', data ? data.length : 'null')
+          console.log('=== Direct API call ===')
+          console.log('Direct API call result length:', data ? data.length : 'null')
+          console.log('Direct API call first 3:', data ? data.slice(0, 3) : 'null')
         })
         .catch(err => {
           console.error('Direct API call error:', err)

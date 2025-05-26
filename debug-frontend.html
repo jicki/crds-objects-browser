@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>前端数据流调试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .data { background: #f5f5f5; padding: 10px; margin: 10px 0; border-radius: 3px; }
+        button { padding: 10px 20px; margin: 5px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+    </style>
+</head>
+<body>
+    <h1>🔍 前端数据流调试</h1>
+    
+    <div class="section">
+        <h3>📊 API测试</h3>
+        <button onclick="testAPI()">测试API</button>
+        <button onclick="testStore()">测试Store</button>
+        <button onclick="testVue()">测试Vue响应性</button>
+        <div id="apiResult" class="data"></div>
+    </div>
+
+    <div class="section">
+        <h3>📦 数据状态</h3>
+        <div id="dataStatus" class="data">等待测试...</div>
+    </div>
+
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://unpkg.com/vuex@4/dist/vuex.global.js"></script>
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+    
+    <script>
+        const { createApp, ref, computed, watch } = Vue;
+        const { createStore } = Vuex;
+
+        // 创建简化的store
+        const store = createStore({
+            state: {
+                resources: [],
+                loading: false,
+                error: null
+            },
+            getters: {
+                sortedResources(state) {
+                    console.log('🔍 sortedResources getter 被调用');
+                    console.log('state.resources:', state.resources);
+                    console.log('state.resources 类型:', typeof state.resources);
+                    console.log('state.resources 是否为数组:', Array.isArray(state.resources));
+                    console.log('state.resources 长度:', state.resources ? state.resources.length : 'null/undefined');
+                    
+                    if (!state.resources || !Array.isArray(state.resources)) {
+                        console.warn('❌ state.resources 不是数组，返回空数组');
+                        return [];
+                    }
+                    
+                    const sorted = [...state.resources].sort((a, b) => {
+                        if (a.group < b.group) return -1;
+                        if (a.group > b.group) return 1;
+                        if (a.name < b.name) return -1;
+                        if (a.name > b.name) return 1;
+                        return 0;
+                    });
+                    
+                    console.log('✅ 排序后的资源数量:', sorted.length);
+                    return sorted;
+                }
+            },
+            mutations: {
+                setResources(state, resources) {
+                    console.log('🔄 setResources mutation 被调用');
+                    console.log('传入的 resources:', resources);
+                    console.log('传入的 resources 类型:', typeof resources);
+                    console.log('传入的 resources 是否为数组:', Array.isArray(resources));
+                    console.log('传入的 resources 长度:', resources ? resources.length : 'null/undefined');
+                    
+                    state.resources = Array.isArray(resources) ? [...resources] : [];
+                    
+                    console.log('✅ 设置后的 state.resources 长度:', state.resources.length);
+                },
+                setLoading(state, loading) {
+                    state.loading = loading;
+                },
+                setError(state, error) {
+                    state.error = error;
+                }
+            },
+            actions: {
+                async fetchResources({ commit }) {
+                    commit('setLoading', true);
+                    commit('setError', null);
+                    try {
+                        console.log('🚀 开始获取资源...');
+                        const response = await axios.get('/api/crds');
+                        console.log('📥 API响应:', response);
+                        console.log('📊 响应数据长度:', response.data ? response.data.length : 'null');
+                        
+                        if (response.data && Array.isArray(response.data)) {
+                            commit('setResources', response.data);
+                        } else {
+                            throw new Error('Invalid data format');
+                        }
+                    } catch (error) {
+                        console.error('❌ 获取资源失败:', error);
+                        commit('setError', error.message);
+                    } finally {
+                        commit('setLoading', false);
+                    }
+                }
+            }
+        });
+
+        // 创建Vue应用
+        const app = createApp({
+            setup() {
+                const sortedResources = computed(() => store.getters.sortedResources);
+                const loading = computed(() => store.state.loading);
+                const error = computed(() => store.state.error);
+                
+                // 监听数据变化
+                watch(sortedResources, (resources) => {
+                    console.log('👀 sortedResources 变化:', resources);
+                    console.log('📊 资源数量:', resources ? resources.length : 0);
+                    updateDataStatus();
+                }, { immediate: true, deep: true });
+                
+                watch(() => store.state.resources, (resources) => {
+                    console.log('👀 store.state.resources 变化:', resources);
+                    console.log('📊 原始资源数量:', resources ? resources.length : 0);
+                    updateDataStatus();
+                }, { immediate: true, deep: true });
+                
+                function updateDataStatus() {
+                    const statusDiv = document.getElementById('dataStatus');
+                    if (statusDiv) {
+                        statusDiv.innerHTML = `
+                            <div><strong>📊 数据状态:</strong></div>
+                            <div>原始资源数: ${store.state.resources ? store.state.resources.length : 0}</div>
+                            <div>排序资源数: ${sortedResources.value ? sortedResources.value.length : 0}</div>
+                            <div>加载状态: ${loading.value ? '加载中' : '已完成'}</div>
+                            <div>错误状态: ${error.value || '无'}</div>
+                            <div>Store类型: ${typeof store.state.resources}</div>
+                            <div>Store是数组: ${Array.isArray(store.state.resources)}</div>
+                        `;
+                    }
+                }
+                
+                return {
+                    sortedResources,
+                    loading,
+                    error,
+                    updateDataStatus
+                };
+            }
+        });
+        
+        app.use(store);
+        app.mount('#app');
+
+        // 测试函数
+        async function testAPI() {
+            const resultDiv = document.getElementById('apiResult');
+            resultDiv.innerHTML = '🔄 测试API...';
+            
+            try {
+                const response = await axios.get('/api/crds');
+                console.log('🔍 直接API测试:', response);
+                
+                resultDiv.innerHTML = `
+                    <div><strong>✅ API测试成功</strong></div>
+                    <div>状态码: ${response.status}</div>
+                    <div>数据类型: ${typeof response.data}</div>
+                    <div>是否为数组: ${Array.isArray(response.data)}</div>
+                    <div>数据长度: ${response.data ? response.data.length : 'null'}</div>
+                    <div>前3个资源: ${JSON.stringify(response.data.slice(0, 3), null, 2)}</div>
+                `;
+            } catch (error) {
+                console.error('❌ API测试失败:', error);
+                resultDiv.innerHTML = `<div><strong>❌ API测试失败:</strong> ${error.message}</div>`;
+            }
+        }
+
+        async function testStore() {
+            const resultDiv = document.getElementById('apiResult');
+            resultDiv.innerHTML = '🔄 测试Store...';
+            
+            try {
+                await store.dispatch('fetchResources');
+                
+                resultDiv.innerHTML = `
+                    <div><strong>✅ Store测试完成</strong></div>
+                    <div>Store资源数: ${store.state.resources ? store.state.resources.length : 0}</div>
+                    <div>Getter资源数: ${store.getters.sortedResources ? store.getters.sortedResources.length : 0}</div>
+                    <div>加载状态: ${store.state.loading}</div>
+                    <div>错误状态: ${store.state.error || '无'}</div>
+                `;
+            } catch (error) {
+                console.error('❌ Store测试失败:', error);
+                resultDiv.innerHTML = `<div><strong>❌ Store测试失败:</strong> ${error.message}</div>`;
+            }
+        }
+
+        function testVue() {
+            const resultDiv = document.getElementById('apiResult');
+            resultDiv.innerHTML = '🔄 测试Vue响应性...';
+            
+            // 手动触发响应性更新
+            const testData = [
+                { group: 'test', version: 'v1', name: 'test1', kind: 'Test1', namespaced: true },
+                { group: 'test', version: 'v1', name: 'test2', kind: 'Test2', namespaced: false }
+            ];
+            
+            store.commit('setResources', testData);
+            
+            setTimeout(() => {
+                resultDiv.innerHTML = `
+                    <div><strong>✅ Vue响应性测试完成</strong></div>
+                    <div>测试数据已设置</div>
+                    <div>Store资源数: ${store.state.resources ? store.state.resources.length : 0}</div>
+                    <div>Getter资源数: ${store.getters.sortedResources ? store.getters.sortedResources.length : 0}</div>
+                `;
+            }, 100);
+        }
+
+        // 页面加载时自动测试
+        window.onload = function() {
+            console.log('🚀 调试页面已加载');
+            testAPI();
+        };
+    </script>
+    
+    <div id="app"></div>
+</body>
+</html> 

@@ -13,11 +13,12 @@ export default createStore({
     resourceNamespaces: [],
     currentNamespace: 'all',
     loading: false,
-    error: null
+    error: null,
+    refreshTrigger: 0  // 添加一个刷新触发器
   },
   getters: {
     sortedResources(state) {
-      console.log('sortedResources getter 被调用')
+      console.log('sortedResources getter 被调用, refreshTrigger:', state.refreshTrigger)
       console.log('state.resources:', state.resources)
       console.log('state.resources 类型:', typeof state.resources)
       console.log('state.resources 是否为数组:', Array.isArray(state.resources))
@@ -29,16 +30,27 @@ export default createStore({
         return []
       }
       
-      const sorted = [...state.resources].sort((a, b) => {
-        if (a.group < b.group) return -1
-        if (a.group > b.group) return 1
-        if (a.name < b.name) return -1
-        if (a.name > b.name) return 1
-        return 0
-      })
-      
-      console.log('排序后的资源数量:', sorted.length)
-      return sorted
+      try {
+        const sorted = [...state.resources].sort((a, b) => {
+          // 处理group为空字符串的情况
+          const groupA = a.group || ''
+          const groupB = b.group || ''
+          
+          if (groupA < groupB) return -1
+          if (groupA > groupB) return 1
+          if (a.name < b.name) return -1
+          if (a.name > b.name) return 1
+          return 0
+        })
+        
+        console.log('排序后的资源数量:', sorted.length)
+        console.log('排序后的前3个资源:', sorted.slice(0, 3))
+        return sorted
+      } catch (error) {
+        console.error('排序过程中出错:', error)
+        console.error('原始资源数据:', state.resources)
+        return []
+      }
     }
   },
   mutations: {
@@ -75,6 +87,10 @@ export default createStore({
     },
     setError(state, error) {
       state.error = error
+    },
+    triggerRefresh(state) {
+      state.refreshTrigger++
+      console.log('触发刷新, refreshTrigger:', state.refreshTrigger)
     }
   },
   actions: {
@@ -102,6 +118,8 @@ export default createStore({
           console.log('即将调用 setResources mutation')
           commit('setResources', response.data)
           console.log('setResources mutation 调用完成')
+          // 触发刷新以确保响应性更新
+          commit('triggerRefresh')
         } else {
           console.error('响应数据格式不正确:', response.data)
           throw new Error('No valid data received')

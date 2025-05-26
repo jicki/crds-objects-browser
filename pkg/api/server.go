@@ -139,6 +139,11 @@ func (s *Server) setupRoutes() {
 		c.JSON(http.StatusOK, gin.H{"message": "test route works"})
 	})
 
+	// 前端调试页面
+	s.router.GET("/debug-frontend", func(c *gin.Context) {
+		c.File("./debug-frontend.html")
+	})
+
 	// 调试页面（放在静态文件服务之前）
 	s.router.GET("/debug", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")
@@ -177,6 +182,7 @@ func (s *Server) setupRoutes() {
             <h3>📦 资源数据测试</h3>
             <button onclick="fetchResources()">获取资源列表</button>
             <button onclick="fetchNamespaces()">获取命名空间</button>
+            <button onclick="testFrontendDataFlow()">测试前端数据流</button>
             <div id="resourcesStatus"></div>
         </div>
     </div>
@@ -256,6 +262,51 @@ func (s *Server) setupRoutes() {
 
         function openUIPage() {
             window.open('/ui/', '_blank');
+        }
+
+        // 前端数据流测试
+        async function testFrontendDataFlow() {
+            const statusDiv = document.getElementById('resourcesStatus');
+            statusDiv.innerHTML = '<div class="status warning">正在测试前端数据流...</div>';
+            
+            try {
+                // 测试API
+                const response = await fetch('/api/crds');
+                const data = await response.json();
+                
+                if (response.ok && Array.isArray(data)) {
+                    statusDiv.innerHTML += '<div class="status success">✅ API数据正常: ' + data.length + ' 个资源</div>';
+                    
+                    // 测试前端页面
+                    const uiResponse = await fetch('/ui/');
+                    if (uiResponse.ok) {
+                        statusDiv.innerHTML += '<div class="status success">✅ 前端页面可访问</div>';
+                        
+                        // 检查前端JavaScript
+                        statusDiv.innerHTML += '<div class="status warning">🔍 请打开浏览器控制台查看前端数据流</div>';
+                        statusDiv.innerHTML += '<div class="status warning">📊 在主页面中，原始资源数应该是 ' + data.length + '</div>';
+                        statusDiv.innerHTML += '<div class="status warning">📊 如果排序资源数为0，说明前端数据处理有问题</div>';
+                        
+                        // 提供调试建议
+                        statusDiv.innerHTML += `
+                            <div class="status warning">
+                                <strong>🔧 调试建议:</strong><br>
+                                1. 打开 <a href="/ui/" target="_blank">主页面</a><br>
+                                2. 打开浏览器开发者工具 (F12)<br>
+                                3. 查看控制台中的数据流日志<br>
+                                4. 检查 sortedResources getter 是否被正确调用<br>
+                                5. 检查 store.state.resources 是否有数据
+                            </div>
+                        `;
+                    } else {
+                        statusDiv.innerHTML += '<div class="status error">❌ 前端页面无法访问</div>';
+                    }
+                } else {
+                    statusDiv.innerHTML += '<div class="status error">❌ API数据异常</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML += '<div class="status error">❌ 测试失败: ' + error.message + '</div>';
+            }
         }
 
         window.onload = function() {
