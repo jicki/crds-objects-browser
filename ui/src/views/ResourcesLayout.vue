@@ -36,10 +36,13 @@
               class="error-alert"
             />
             
-            <!-- 简化的状态信息 -->
-            <div class="status-info" v-if="loading || error">
-              <el-tag :type="loading ? 'warning' : 'success'" size="small">
-                {{ loading ? '加载中...' : `${sortedResources?.length || 0} 个资源` }}
+            <!-- 资源统计信息 -->
+            <div class="status-info">
+              <el-tag 
+                :type="loading ? 'warning' : error ? 'danger' : 'success'" 
+                size="small"
+              >
+                {{ loading ? '加载中...' : error ? '加载失败' : `${sortedResources?.length || 0} 个资源` }}
               </el-tag>
               <el-button 
                 @click="refreshData" 
@@ -47,6 +50,7 @@
                 type="text" 
                 class="refresh-btn"
                 :icon="Refresh"
+                :loading="loading"
               />
             </div>
             
