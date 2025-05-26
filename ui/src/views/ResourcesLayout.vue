@@ -45,17 +45,35 @@
                 <el-tag type="danger" size="small">{{ error }}</el-tag>
               </div>
               <div style="margin-top: 5px;">
-                <span style="color: #67C23A;">📦 资源总数:</span> 
+                <span style="color: #67C23A;">📦 原始资源数:</span> 
+                <el-tag type="success" size="small">{{ $store.state.resources ? $store.state.resources.length : 0 }}</el-tag>
+              </div>
+              <div style="margin-top: 5px;">
+                <span style="color: #67C23A;">📦 排序资源数:</span> 
                 <el-tag type="success" size="small">{{ sortedResources ? sortedResources.length : 0 }}</el-tag>
               </div>
               <div style="margin-top: 5px;">
                 <span style="color: #409EFF;">🌳 分组数量:</span> 
                 <el-tag type="primary" size="small">{{ resourcesTree ? resourcesTree.length : 0 }}</el-tag>
               </div>
+              <div style="margin-top: 5px;">
+                <span style="color: #E6A23C;">🔍 搜索查询:</span> 
+                <el-tag type="warning" size="small">{{ searchQuery || '无' }}</el-tag>
+              </div>
+              <div style="margin-top: 5px;">
+                <span style="color: #909399;">📊 Store状态:</span> 
+                <el-tag :type="$store.state.resources ? 'success' : 'danger'" size="small">
+                  {{ $store.state.resources ? '有数据' : '无数据' }}
+                </el-tag>
+              </div>
               <div style="margin-top: 8px;">
                 <el-button @click="refreshData" size="small" type="primary" plain>
                   <el-icon><Refresh /></el-icon>
                   刷新数据
+                </el-button>
+                <el-button @click="debugData" size="small" type="info" plain>
+                  <el-icon><Monitor /></el-icon>
+                  调试数据
                 </el-button>
               </div>
             </div>
@@ -617,6 +635,33 @@ export default {
       store.dispatch('fetchNamespaces')
     }
 
+    const debugData = () => {
+      console.log('=== 调试数据 ===')
+      console.log('Store state:', store.state)
+      console.log('Store resources:', store.state.resources)
+      console.log('Store resources length:', store.state.resources ? store.state.resources.length : 'null')
+      console.log('Store resources type:', typeof store.state.resources)
+      console.log('Store resources is array:', Array.isArray(store.state.resources))
+      console.log('Sorted resources:', sortedResources.value)
+      console.log('Sorted resources length:', sortedResources.value ? sortedResources.value.length : 'null')
+      console.log('Resources tree:', resourcesTree.value)
+      console.log('Resources tree length:', resourcesTree.value ? resourcesTree.value.length : 'null')
+      console.log('Loading:', loading.value)
+      console.log('Error:', error.value)
+      console.log('Search query:', searchQuery.value)
+      
+      // 测试API调用
+      fetch('/api/crds')
+        .then(response => response.json())
+        .then(data => {
+          console.log('Direct API call result:', data)
+          console.log('Direct API call length:', data ? data.length : 'null')
+        })
+        .catch(err => {
+          console.error('Direct API call error:', err)
+        })
+    }
+
     // 获取组图标
     const getGroupIcon = (data) => {
       const label = data.label.toLowerCase()
@@ -717,6 +762,7 @@ export default {
       handleResourceClick,
       filterNode,
       refreshData,
+      debugData,
       restoreTreeState,
       getGroupIcon,
       getResourceIcon,

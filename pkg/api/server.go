@@ -134,6 +134,139 @@ func (s *Server) setupRoutes() {
 	s.router.GET("/readyz", s.readinessCheck)
 	s.router.GET("/livez", s.livenessCheck)
 
+	// 测试路由
+	s.router.GET("/test", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "test route works"})
+	})
+
+	// 调试页面（放在静态文件服务之前）
+	s.router.GET("/debug", func(c *gin.Context) {
+		c.Header("Content-Type", "text/html; charset=utf-8")
+		c.String(http.StatusOK, `
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRDs Browser 调试页面</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .section { margin-bottom: 30px; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .status.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .status.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .status.warning { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        button { background-color: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin: 5px; }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 CRDs Objects Browser 调试页面</h1>
+        
+        <div class="section">
+            <h3>📊 系统状态检查</h3>
+            <button onclick="checkHealth()">检查健康状态</button>
+            <button onclick="checkAPI()">检查API响应</button>
+            <button onclick="openUIPage()">打开UI页面</button>
+            <div id="healthStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>📦 资源数据测试</h3>
+            <button onclick="fetchResources()">获取资源列表</button>
+            <button onclick="fetchNamespaces()">获取命名空间</button>
+            <div id="resourcesStatus"></div>
+        </div>
+    </div>
+
+    <script>
+        async function checkHealth() {
+            const statusDiv = document.getElementById('healthStatus');
+            statusDiv.innerHTML = '<div class="status warning">正在检查健康状态...</div>';
+            
+            try {
+                const response = await fetch('/healthz');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = '<div class="status success">✅ 服务健康状态正常<br>服务: ' + data.service + '<br>状态: ' + data.status + '</div>';
+                } else {
+                    statusDiv.innerHTML = '<div class="status error">❌ 健康检查失败: ' + response.status + '</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<div class="status error">❌ 健康检查错误: ' + error.message + '</div>';
+            }
+        }
+
+        async function checkAPI() {
+            const statusDiv = document.getElementById('healthStatus');
+            statusDiv.innerHTML += '<div class="status warning">正在检查API响应...</div>';
+            
+            try {
+                const response = await fetch('/api/crds');
+                const data = await response.json();
+                
+                if (response.ok && Array.isArray(data)) {
+                    statusDiv.innerHTML += '<div class="status success">✅ API响应正常<br>资源数量: ' + data.length + '</div>';
+                } else {
+                    statusDiv.innerHTML += '<div class="status error">❌ API响应异常: ' + response.status + '</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML += '<div class="status error">❌ API请求错误: ' + error.message + '</div>';
+            }
+        }
+
+        async function fetchResources() {
+            const statusDiv = document.getElementById('resourcesStatus');
+            statusDiv.innerHTML = '<div class="status warning">正在获取资源列表...</div>';
+            
+            try {
+                const response = await fetch('/api/crds');
+                const data = await response.json();
+                
+                if (response.ok && Array.isArray(data)) {
+                    statusDiv.innerHTML = '<div class="status success">✅ 资源列表获取成功<br>总数量: ' + data.length + '</div>';
+                } else {
+                    statusDiv.innerHTML = '<div class="status error">❌ 资源列表获取失败: ' + response.status + '</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML = '<div class="status error">❌ 资源列表获取错误: ' + error.message + '</div>';
+            }
+        }
+
+        async function fetchNamespaces() {
+            const statusDiv = document.getElementById('resourcesStatus');
+            statusDiv.innerHTML += '<div class="status warning">正在获取命名空间...</div>';
+            
+            try {
+                const response = await fetch('/api/namespaces');
+                const data = await response.json();
+                
+                if (response.ok && Array.isArray(data)) {
+                    statusDiv.innerHTML += '<div class="status success">✅ 命名空间获取成功<br>数量: ' + data.length + '</div>';
+                } else {
+                    statusDiv.innerHTML += '<div class="status error">❌ 命名空间获取失败: ' + response.status + '</div>';
+                }
+            } catch (error) {
+                statusDiv.innerHTML += '<div class="status error">❌ 命名空间获取错误: ' + error.message + '</div>';
+            }
+        }
+
+        function openUIPage() {
+            window.open('/ui/', '_blank');
+        }
+
+        window.onload = function() {
+            console.log('CRDs Browser 调试页面已加载');
+            checkHealth();
+        };
+    </script>
+</body>
+</html>`)
+	})
+
 	// 静态文件服务
 	s.router.Static("/ui", "./ui/dist")
 	s.router.GET("/", func(c *gin.Context) {

@@ -22,11 +22,13 @@ func main() {
 
 	flag.StringVar(&kubeconfig, "kubeconfig", "", "Path to kubeconfig file")
 	flag.StringVar(&port, "port", "8080", "Port to run the server on")
-	flag.Parse()
-
+	
 	// 初始化klog
 	klog.InitFlags(nil)
-	flag.Set("v", "2") // 设置日志级别
+	flag.Parse()
+	
+	// 设置日志级别
+	flag.Set("v", "2")
 
 	klog.Info("Starting CRDs Objects Browser with Informer optimization")
 

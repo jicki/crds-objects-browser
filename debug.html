@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CRDs Browser 调试页面</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .section h3 {
+            margin-top: 0;
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .data-display {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .resource-item {
+            padding: 8px;
+            margin: 5px 0;
+            background-color: white;
+            border: 1px solid #e9ecef;
+            border-radius: 3px;
+        }
+        .resource-group {
+            font-weight: bold;
+            color: #495057;
+        }
+        .resource-name {
+            color: #007bff;
+        }
+        .resource-version {
+            color: #6c757d;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 CRDs Objects Browser 调试页面</h1>
+        
+        <div class="section">
+            <h3>📊 系统状态检查</h3>
+            <button onclick="checkHealth()">检查健康状态</button>
+            <button onclick="checkAPI()">检查API响应</button>
+            <button onclick="checkCache()">检查缓存状态</button>
+            <div id="healthStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>📦 资源数据测试</h3>
+            <button onclick="fetchResources()">获取资源列表</button>
+            <button onclick="fetchNamespaces()">获取命名空间</button>
+            <button onclick="testFrontendAPI()">测试前端API</button>
+            <div id="resourcesStatus"></div>
+            <div id="resourcesData" class="data-display" style="display: none;"></div>
+        </div>
+
+        <div class="section">
+            <h3>🌐 前端页面测试</h3>
+            <button onclick="openMainPage()">打开主页面</button>
+            <button onclick="openUIPage()">打开UI页面</button>
+            <button onclick="testConsole()">测试控制台</button>
+            <div id="frontendStatus"></div>
+        </div>
+
+        <div class="section">
+            <h3>🔧 性能监控</h3>
+            <button onclick="checkPerformance()">检查性能统计</button>
+            <button onclick="monitorCache()">监控缓存</button>
+            <div id="performanceStatus"></div>
+        </div>
+    </div>
+
+    <script>
+        // 健康状态检查
+        async function checkHealth() {
+            const statusDiv = document.getElementById('healthStatus');
+            statusDiv.innerHTML = '<div class="status warning">正在检查健康状态...</div>';
+            
+            try {
+                const response = await fetch('/healthz');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ 服务健康状态正常<br>
+                            服务: ${data.service}<br>
+                            状态: ${data.status}<br>
+                            时间: ${data.timestamp}
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">❌ 健康检查失败: ${response.status}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ 健康检查错误: ${error.message}</div>`;
+            }
+        }
+
+        // API响应检查
+        async function checkAPI() {
+            const statusDiv = document.getElementById('healthStatus');
+            statusDiv.innerHTML += '<div class="status warning">正在检查API响应...</div>';
+            
+            try {
+                const response = await fetch('/api/crds');
+                const data = await response.json();
+                
+                if (response.ok && Array.isArray(data)) {
+                    statusDiv.innerHTML += `
+                        <div class="status success">
+                            ✅ API响应正常<br>
+                            资源数量: ${data.length}<br>
+                            响应时间: ${response.headers.get('x-response-time') || '未知'}
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML += `<div class="status error">❌ API响应异常: ${response.status}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML += `<div class="status error">❌ API请求错误: ${error.message}</div>`;
+            }
+        }
+
+        // 缓存状态检查
+        async function checkCache() {
+            const statusDiv = document.getElementById('healthStatus');
+            statusDiv.innerHTML += '<div class="status warning">正在检查缓存状态...</div>';
+            
+            try {
+                const response = await fetch('/api/cache/status');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML += `
+                        <div class="status success">
+                            ✅ 缓存状态正常<br>
+                            活跃Informer: ${data.activeInformers || 0}<br>
+                            就绪资源: ${data.readyResources || 0}<br>
+                            总对象数: ${data.totalObjects || 0}
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML += `<div class="status error">❌ 缓存状态检查失败: ${response.status}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML += `<div class="status error">❌ 缓存状态检查错误: ${error.message}</div>`;
+            }
+        }
+
+        // 获取资源列表
+        async function fetchResources() {
+            const statusDiv = document.getElementById('resourcesStatus');
+            const dataDiv = document.getElementById('resourcesData');
+            
+            statusDiv.innerHTML = '<div class="status warning">正在获取资源列表...</div>';
+            
+            try {
+                const response = await fetch('/api/crds');
+                const data = await response.json();
+                
+                if (response.ok && Array.isArray(data)) {
+                    statusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ 资源列表获取成功<br>
+                            总数量: ${data.length}<br>
+                            响应大小: ${JSON.stringify(data).length} 字节
+                        </div>
+                    `;
+                    
+                    // 显示资源数据
+                    displayResources(data);
+                    dataDiv.style.display = 'block';
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">❌ 资源列表获取失败: ${response.status}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ 资源列表获取错误: ${error.message}</div>`;
+            }
+        }
+
+        // 显示资源数据
+        function displayResources(resources) {
+            const dataDiv = document.getElementById('resourcesData');
+            
+            // 按组分类
+            const groups = {};
+            resources.forEach(resource => {
+                const group = resource.group || 'core';
+                if (!groups[group]) {
+                    groups[group] = [];
+                }
+                groups[group].push(resource);
+            });
+            
+            let html = '<h4>📦 资源分组显示:</h4>';
+            
+            Object.keys(groups).sort().forEach(group => {
+                html += `<div class="resource-group">📁 ${group} (${groups[group].length} 个资源)</div>`;
+                
+                groups[group].slice(0, 5).forEach(resource => {
+                    html += `
+                        <div class="resource-item">
+                            <span class="resource-name">${resource.name}</span>
+                            <span class="resource-version">(${resource.version})</span>
+                            - ${resource.kind}
+                            ${resource.namespaced ? '🏷️ 命名空间级' : '🌐 集群级'}
+                        </div>
+                    `;
+                });
+                
+                if (groups[group].length > 5) {
+                    html += `<div class="resource-item">... 还有 ${groups[group].length - 5} 个资源</div>`;
+                }
+            });
+            
+            dataDiv.innerHTML = html;
+        }
+
+        // 获取命名空间
+        async function fetchNamespaces() {
+            const statusDiv = document.getElementById('resourcesStatus');
+            
+            statusDiv.innerHTML += '<div class="status warning">正在获取命名空间...</div>';
+            
+            try {
+                const response = await fetch('/api/namespaces');
+                const data = await response.json();
+                
+                if (response.ok && Array.isArray(data)) {
+                    statusDiv.innerHTML += `
+                        <div class="status success">
+                            ✅ 命名空间获取成功<br>
+                            数量: ${data.length}<br>
+                            示例: ${data.slice(0, 3).join(', ')}
+                        </div>
+                    `;
+                } else {
+                    statusDiv.innerHTML += `<div class="status error">❌ 命名空间获取失败: ${response.status}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML += `<div class="status error">❌ 命名空间获取错误: ${error.message}</div>`;
+            }
+        }
+
+        // 测试前端API
+        async function testFrontendAPI() {
+            const statusDiv = document.getElementById('resourcesStatus');
+            
+            statusDiv.innerHTML += '<div class="status warning">正在测试前端API...</div>';
+            
+            // 测试多个API端点
+            const endpoints = [
+                '/api/crds',
+                '/api/namespaces',
+                '/api/cache/stats',
+                '/api/performance/stats'
+            ];
+            
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(endpoint);
+                    const data = await response.json();
+                    
+                    if (response.ok) {
+                        statusDiv.innerHTML += `
+                            <div class="status success">
+                                ✅ ${endpoint}: 正常 (${Array.isArray(data) ? data.length + ' 项' : '对象'})
+                            </div>
+                        `;
+                    } else {
+                        statusDiv.innerHTML += `
+                            <div class="status error">❌ ${endpoint}: 失败 (${response.status})</div>
+                        `;
+                    }
+                } catch (error) {
+                    statusDiv.innerHTML += `
+                        <div class="status error">❌ ${endpoint}: 错误 (${error.message})</div>
+                    `;
+                }
+            }
+        }
+
+        // 打开主页面
+        function openMainPage() {
+            const statusDiv = document.getElementById('frontendStatus');
+            statusDiv.innerHTML = '<div class="status warning">正在打开主页面...</div>';
+            
+            window.open('/', '_blank');
+            statusDiv.innerHTML += '<div class="status success">✅ 主页面已在新标签页中打开</div>';
+        }
+
+        // 打开UI页面
+        function openUIPage() {
+            const statusDiv = document.getElementById('frontendStatus');
+            statusDiv.innerHTML = '<div class="status warning">正在打开UI页面...</div>';
+            
+            window.open('/ui/', '_blank');
+            statusDiv.innerHTML += '<div class="status success">✅ UI页面已在新标签页中打开</div>';
+        }
+
+        // 测试控制台
+        function testConsole() {
+            const statusDiv = document.getElementById('frontendStatus');
+            
+            console.log('=== CRDs Browser 调试信息 ===');
+            console.log('当前时间:', new Date().toISOString());
+            console.log('用户代理:', navigator.userAgent);
+            console.log('页面URL:', window.location.href);
+            
+            statusDiv.innerHTML = `
+                <div class="status success">
+                    ✅ 控制台测试完成<br>
+                    请打开浏览器开发者工具查看控制台输出
+                </div>
+            `;
+        }
+
+        // 检查性能统计
+        async function checkPerformance() {
+            const statusDiv = document.getElementById('performanceStatus');
+            statusDiv.innerHTML = '<div class="status warning">正在检查性能统计...</div>';
+            
+            try {
+                const response = await fetch('/api/performance/stats');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML = `
+                        <div class="status success">
+                            ✅ 性能统计获取成功<br>
+                            详细信息请查看控制台
+                        </div>
+                    `;
+                    console.log('性能统计:', data);
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">❌ 性能统计获取失败: ${response.status}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="status error">❌ 性能统计获取错误: ${error.message}</div>`;
+            }
+        }
+
+        // 监控缓存
+        async function monitorCache() {
+            const statusDiv = document.getElementById('performanceStatus');
+            statusDiv.innerHTML += '<div class="status warning">正在监控缓存...</div>';
+            
+            try {
+                const response = await fetch('/api/cache/stats');
+                const data = await response.json();
+                
+                if (response.ok) {
+                    statusDiv.innerHTML += `
+                        <div class="status success">
+                            ✅ 缓存监控成功<br>
+                            详细信息请查看控制台
+                        </div>
+                    `;
+                    console.log('缓存统计:', data);
+                } else {
+                    statusDiv.innerHTML += `<div class="status error">❌ 缓存监控失败: ${response.status}</div>`;
+                }
+            } catch (error) {
+                statusDiv.innerHTML += `<div class="status error">❌ 缓存监控错误: ${error.message}</div>`;
+            }
+        }
+
+        // 页面加载时自动执行基础检查
+        window.onload = function() {
+            console.log('CRDs Browser 调试页面已加载');
+            checkHealth();
+        };
+    </script>
+</body>
+</html> 
