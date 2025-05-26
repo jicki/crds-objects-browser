@@ -144,6 +144,11 @@ func (s *Server) setupRoutes() {
 		c.File("./debug-frontend.html")
 	})
 
+	// 前端修复测试页面
+	s.router.GET("/test-fix", func(c *gin.Context) {
+		c.File("./test-frontend-fix.html")
+	})
+
 	// 调试页面（放在静态文件服务之前）
 	s.router.GET("/debug", func(c *gin.Context) {
 		c.Header("Content-Type", "text/html; charset=utf-8")

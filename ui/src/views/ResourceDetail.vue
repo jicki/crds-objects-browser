@@ -140,17 +140,17 @@
           :row-style="{ height: '50px' }"
           size="default"
         >
-          <el-table-column prop="name" label="名称" min-width="200" sortable show-overflow-tooltip>
+          <el-table-column prop="metadata.name" label="名称" min-width="200" sortable show-overflow-tooltip>
             <template #default="scope">
               <div class="name-cell">
                 <el-icon class="resource-icon"><Document /></el-icon>
-                <span class="resource-name">{{ scope.row.name }}</span>
+                <span class="resource-name">{{ scope.row.metadata?.name || scope.row.name || '-' }}</span>
               </div>
             </template>
           </el-table-column>
           
           <el-table-column 
-            prop="namespace" 
+            prop="metadata.namespace" 
             label="命名空间" 
             width="180" 
             v-if="selectedResource.namespaced" 
@@ -158,18 +158,18 @@
             show-overflow-tooltip
           >
             <template #default="scope">
-              <el-tag v-if="scope.row.namespace" type="info" size="small" effect="plain">
-                📁 {{ scope.row.namespace }}
+              <el-tag v-if="scope.row.metadata?.namespace || scope.row.namespace" type="info" size="small" effect="plain">
+                📁 {{ scope.row.metadata?.namespace || scope.row.namespace }}
               </el-tag>
               <span v-else class="no-namespace">-</span>
             </template>
           </el-table-column>
           
-          <el-table-column prop="creationTimestamp" label="创建时间" width="200" sortable>
+          <el-table-column prop="metadata.creationTimestamp" label="创建时间" width="200" sortable>
             <template #default="scope">
               <div class="time-cell">
                 <el-icon class="time-icon"><Clock /></el-icon>
-                <span>{{ formatTime(scope.row.creationTimestamp) }}</span>
+                <span>{{ formatTime(scope.row.metadata?.creationTimestamp || scope.row.creationTimestamp) }}</span>
               </div>
             </template>
           </el-table-column>
@@ -247,7 +247,7 @@
                 </template>
                 <div class="yaml-content">
                   <div class="yaml-header">
-                    <h4>{{ scope.row.name }} 详细信息</h4>
+                    <h4>{{ scope.row.metadata?.name || scope.row.name || '未知资源' }} 详细信息</h4>
                     <el-button size="small" @click="copyToClipboard(scope.row)">
                       <el-icon><CopyDocument /></el-icon>
                       复制
@@ -674,12 +674,14 @@ export default {
         const query = searchQuery.value.toLowerCase()
         filtered = filtered.filter(obj => {
           // 搜索名称
-          if (obj.name && obj.name.toLowerCase().includes(query)) {
+          const name = obj.metadata?.name || obj.name
+          if (name && name.toLowerCase().includes(query)) {
             return true
           }
           
           // 搜索命名空间
-          if (obj.namespace && obj.namespace.toLowerCase().includes(query)) {
+          const namespace = obj.metadata?.namespace || obj.namespace
+          if (namespace && namespace.toLowerCase().includes(query)) {
             return true
           }
           
@@ -854,7 +856,7 @@ export default {
         return 0
       }
       
-      return resourceObjects.value.filter(obj => obj.namespace === namespace).length
+      return resourceObjects.value.filter(obj => (obj.metadata?.namespace || obj.namespace) === namespace).length
     }
 
     // 处理命名空间下拉框显示/隐藏
