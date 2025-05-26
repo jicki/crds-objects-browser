@@ -44,6 +44,16 @@ dev: ## 启动开发环境
 	@echo "🔧 启动后端服务器..."
 	go run cmd/main.go -v=4
 
+.PHONY: dev-fast
+dev-fast: ## 快速启动开发环境（跳过前端构建）
+	@echo "⚡ 快速启动开发环境..."
+	go run cmd/main.go -v=4
+
+.PHONY: dev-debug
+dev-debug: ## 启动调试模式（详细日志）
+	@echo "🐛 启动调试模式..."
+	go run cmd/main.go -v=6 -logtostderr=true
+
 .PHONY: dev-ui
 dev-ui: ## 启动前端开发服务器
 	@echo "🎨 启动前端开发服务器..."
@@ -74,6 +84,15 @@ build-local: build-ui ## 构建本地版本（自动检测操作系统）
 		-o bin/$(PROJECT_NAME)-local \
 		cmd/main.go
 
+.PHONY: build-optimized
+build-optimized: build-ui ## 构建性能优化版本
+	@echo "⚡ 构建性能优化版本..."
+	CGO_ENABLED=0 go build \
+		-ldflags "$(LDFLAGS) -X main.optimized=true" \
+		-gcflags="-m -l" \
+		-o bin/$(PROJECT_NAME)-optimized \
+		cmd/main.go
+
 .PHONY: run
 run: build-local ## 构建并运行本地版本
 	@echo "🚀 启动应用..."
@@ -91,6 +110,16 @@ test-coverage: ## 运行测试并生成覆盖率报告
 	go test -v -coverprofile=coverage.out ./...
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "覆盖率报告已生成: coverage.html"
+
+.PHONY: test-race
+test-race: ## 运行竞态检测测试
+	@echo "🏁 运行竞态检测测试..."
+	go test -race -v ./...
+
+.PHONY: test-bench
+test-bench: ## 运行基准测试
+	@echo "⚡ 运行基准测试..."
+	go test -bench=. -benchmem ./...
 
 # 代码质量
 .PHONY: lint
@@ -111,6 +140,7 @@ clean: ## 清理构建文件
 	rm -rf bin/
 	rm -rf ui/dist/
 	rm -f coverage.out coverage.html
+	rm -f cpu.prof mem.prof trace.out
 
 # Docker相关
 .PHONY: docker-build
@@ -168,19 +198,107 @@ k8s-status: ## 查看Kubernetes状态
 	@echo "📊 查看应用状态..."
 	kubectl get all -n crds-browser
 
+# 性能监控和优化
 .PHONY: informer-stats
 informer-stats: ## 查看Informer缓存统计
 	@echo "📈 查看Informer缓存统计..."
-	curl -s http://localhost:8080/api/cache/stats | jq .
+	@curl -s http://localhost:8080/api/cache/stats | jq . || echo "请确保应用正在运行"
+
+.PHONY: cache-status
+cache-status: ## 查看缓存状态
+	@echo "💾 查看缓存状态..."
+	@curl -s http://localhost:8080/api/cache/status | jq . || echo "请确保应用正在运行"
+
+.PHONY: performance-stats
+performance-stats: ## 查看性能统计
+	@echo "⚡ 查看性能统计..."
+	@curl -s http://localhost:8080/api/performance/stats | jq . || echo "请确保应用正在运行"
+
+.PHONY: monitor
+monitor: ## 实时监控应用状态
+	@echo "📊 实时监控应用状态..."
+	@while true; do \
+		clear; \
+		echo "=== CRDs Objects Browser 实时监控 ==="; \
+		echo "时间: $$(date)"; \
+		echo ""; \
+		echo "缓存状态:"; \
+		curl -s http://localhost:8080/api/cache/status | jq . 2>/dev/null || echo "无法连接到应用"; \
+		echo ""; \
+		echo "性能统计:"; \
+		curl -s http://localhost:8080/api/performance/stats | jq . 2>/dev/null || echo "无法获取性能统计"; \
+		echo ""; \
+		echo "按 Ctrl+C 退出监控"; \
+		sleep 5; \
+	done
 
 .PHONY: benchmark
 benchmark: ## 运行性能基准测试
 	@echo "⚡ 运行性能基准测试..."
 	@echo "测试直接API调用 vs Informer缓存性能..."
+	@echo "正在测试 deployments 资源..."
 	@for i in {1..10}; do \
 		echo "测试轮次 $$i:"; \
-		time curl -s http://localhost:8080/api/crds/apps/v1/deployments/objects > /dev/null; \
+		time curl -s http://localhost:8080/api/crds/apps/v1/deployments/objects > /dev/null 2>&1; \
 	done
+	@echo ""
+	@echo "正在测试快速接口..."
+	@for i in {1..10}; do \
+		echo "快速接口测试轮次 $$i:"; \
+		time curl -s http://localhost:8080/api/crds/apps/v1/deployments/objects/fast > /dev/null 2>&1; \
+	done
+
+.PHONY: load-test
+load-test: ## 运行负载测试
+	@echo "🔥 运行负载测试..."
+	@echo "并发请求测试..."
+	@for i in {1..20}; do \
+		curl -s http://localhost:8080/api/crds/apps/v1/deployments/objects > /dev/null & \
+	done; \
+	wait; \
+	echo "负载测试完成"
+
+.PHONY: profile-cpu
+profile-cpu: ## CPU性能分析
+	@echo "🔍 启动CPU性能分析..."
+	@echo "访问 http://localhost:8080/debug/pprof/profile?seconds=30 进行30秒CPU分析"
+	@echo "或运行: go tool pprof http://localhost:8080/debug/pprof/profile"
+
+.PHONY: profile-mem
+profile-mem: ## 内存性能分析
+	@echo "🧠 启动内存性能分析..."
+	@echo "访问 http://localhost:8080/debug/pprof/heap 进行内存分析"
+	@echo "或运行: go tool pprof http://localhost:8080/debug/pprof/heap"
+
+.PHONY: profile-trace
+profile-trace: ## 执行跟踪分析
+	@echo "🔬 启动执行跟踪分析..."
+	@echo "访问 http://localhost:8080/debug/pprof/trace?seconds=10 进行10秒跟踪"
+	@echo "或运行: go tool trace trace.out"
+
+# 健康检查
+.PHONY: health-check
+health-check: ## 健康检查
+	@echo "🏥 执行健康检查..."
+	@echo "健康状态:"
+	@curl -s http://localhost:8080/healthz || echo "健康检查失败"
+	@echo ""
+	@echo "就绪状态:"
+	@curl -s http://localhost:8080/readyz || echo "就绪检查失败"
+	@echo ""
+	@echo "存活状态:"
+	@curl -s http://localhost:8080/livez || echo "存活检查失败"
+
+.PHONY: stress-test
+stress-test: ## 压力测试
+	@echo "💪 运行压力测试..."
+	@echo "启动100个并发请求..."
+	@for i in {1..100}; do \
+		(curl -s http://localhost:8080/api/crds > /dev/null &); \
+	done; \
+	wait; \
+	echo "压力测试完成，检查应用状态..."
+	@make health-check
 
 # 依赖管理
 .PHONY: deps
@@ -199,20 +317,60 @@ deps-update: ## 更新依赖
 	@echo "🔄 更新前端依赖..."
 	cd ui && npm update
 
-# 发布相关
-.PHONY: release
-release: clean build docker-build docker-push ## 发布新版本
-	@echo "🎉 发布版本 $(VERSION) 完成!"
-	@echo "Docker镜像: $(IMAGE_NAME):$(IMAGE_TAG)"
+.PHONY: deps-check
+deps-check: ## 检查依赖安全性
+	@echo "🔒 检查依赖安全性..."
+	go list -json -m all | nancy sleuth
+	cd ui && npm audit
 
-# 信息显示
+# 调试和故障排除
+.PHONY: debug-informers
+debug-informers: ## 调试Informer状态
+	@echo "🐛 调试Informer状态..."
+	@echo "活跃的Informers:"
+	@curl -s http://localhost:8080/api/cache/stats | jq '.resourceStats | keys[]' || echo "无法获取Informer状态"
+	@echo ""
+	@echo "同步状态:"
+	@curl -s http://localhost:8080/api/cache/stats | jq '.syncStatus' || echo "无法获取同步状态"
+
+.PHONY: debug-memory
+debug-memory: ## 调试内存使用
+	@echo "🧠 调试内存使用..."
+	@curl -s http://localhost:8080/debug/pprof/heap > mem.prof
+	@go tool pprof -text mem.prof | head -20
+	@echo "详细内存分析已保存到 mem.prof"
+
+.PHONY: debug-goroutines
+debug-goroutines: ## 调试Goroutine状态
+	@echo "🔄 调试Goroutine状态..."
+	@curl -s http://localhost:8080/debug/pprof/goroutine?debug=1 | head -50
+
+.PHONY: logs-tail
+logs-tail: ## 实时查看日志
+	@echo "📋 实时查看应用日志..."
+	@tail -f server.log 2>/dev/null || echo "日志文件不存在，请确保应用正在运行"
+
+# 版本信息
 .PHONY: version
 version: ## 显示版本信息
 	@echo "项目: $(PROJECT_NAME)"
 	@echo "版本: $(VERSION)"
 	@echo "提交: $(COMMIT)"
 	@echo "构建时间: $(BUILD_TIME)"
-	@echo "镜像: $(IMAGE_NAME):$(IMAGE_TAG)"
+	@echo "Go版本: $(shell go version)"
+
+# 完整的CI/CD流程
+.PHONY: ci
+ci: deps lint test build ## 完整的CI流程
+
+.PHONY: cd
+cd: ci docker-build docker-push ## 完整的CD流程
+
+# 发布相关
+.PHONY: release
+release: clean build docker-build docker-push ## 发布新版本
+	@echo "🎉 发布版本 $(VERSION) 完成!"
+	@echo "Docker镜像: $(IMAGE_NAME):$(IMAGE_TAG)"
 
 # 开发辅助
 .PHONY: install-hooks

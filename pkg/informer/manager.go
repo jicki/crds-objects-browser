@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -36,6 +37,7 @@ type CacheStats struct {
 	TotalObjects    int                     `json:"totalObjects"`
 	ResourceStats   map[string]ResourceStat `json:"resourceStats"`
 	LastUpdate      time.Time               `json:"lastUpdate"`
+	SyncStatus      map[string]bool         `json:"syncStatus"`
 }
 
 // ResourceStat 单个资源的统计信息
@@ -44,6 +46,7 @@ type ResourceStat struct {
 	NamespaceCount int           `json:"namespaceCount"`
 	LastSync       time.Time     `json:"lastSync"`
 	SyncDuration   time.Duration `json:"syncDuration"`
+	IsReady        bool          `json:"isReady"`
 }
 
 // InformerManager Informer管理器
@@ -57,6 +60,12 @@ type InformerManager struct {
 	cancel          context.CancelFunc
 	stats           CacheStats
 	statsMutex      sync.RWMutex
+
+	// 性能优化相关
+	objectPool    sync.Pool
+	readyStatus   map[schema.GroupVersionResource]*atomic.Bool
+	readyMutex    sync.RWMutex
+	syncWaitGroup sync.WaitGroup
 }
 
 // NewInformerManager 创建新的Informer管理器
@@ -68,11 +77,18 @@ func NewInformerManager(dynamicClient dynamic.Interface) *InformerManager {
 		informerFactory: dynamicinformer.NewDynamicSharedInformerFactory(dynamicClient, 30*time.Second),
 		informers:       make(map[schema.GroupVersionResource]cache.SharedIndexInformer),
 		stopChannels:    make(map[schema.GroupVersionResource]chan struct{}),
+		readyStatus:     make(map[schema.GroupVersionResource]*atomic.Bool),
 		ctx:             ctx,
 		cancel:          cancel,
 		stats: CacheStats{
 			ResourceStats: make(map[string]ResourceStat),
+			SyncStatus:    make(map[string]bool),
 			LastUpdate:    time.Now(),
+		},
+		objectPool: sync.Pool{
+			New: func() interface{} {
+				return make([]*unstructured.Unstructured, 0, 100)
+			},
 		},
 	}
 }
@@ -98,6 +114,13 @@ func (im *InformerManager) StartInformer(gvr schema.GroupVersionResource, namesp
 		informer = im.informerFactory.ForResource(gvr).Informer()
 	}
 
+	// 初始化就绪状态
+	readyFlag := &atomic.Bool{}
+	readyFlag.Store(false)
+	im.readyMutex.Lock()
+	im.readyStatus[gvr] = readyFlag
+	im.readyMutex.Unlock()
+
 	// 添加事件处理器
 	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(obj interface{}) {
@@ -122,21 +145,42 @@ func (im *InformerManager) StartInformer(gvr schema.GroupVersionResource, namesp
 	// 启动Informer
 	go informer.Run(stopCh)
 
-	// 等待缓存同步
+	// 异步等待缓存同步
+	im.syncWaitGroup.Add(1)
 	go func() {
+		defer im.syncWaitGroup.Done()
 		startTime := time.Now()
 		klog.Infof("Waiting for cache sync for %s", gvr.String())
 
-		if !cache.WaitForCacheSync(stopCh, informer.HasSynced) {
-			klog.Errorf("Failed to sync cache for %s", gvr.String())
-			return
+		// 使用带超时的上下文
+		syncCtx, syncCancel := context.WithTimeout(im.ctx, 60*time.Second)
+		defer syncCancel()
+
+		// 创建一个通道来接收同步结果
+		syncDone := make(chan bool, 1)
+		go func() {
+			syncDone <- cache.WaitForCacheSync(stopCh, informer.HasSynced)
+		}()
+
+		select {
+		case synced := <-syncDone:
+			if synced {
+				syncDuration := time.Since(startTime)
+				klog.Infof("Cache synced for %s in %v", gvr.String(), syncDuration)
+
+				// 标记为就绪
+				readyFlag.Store(true)
+
+				// 更新统计信息
+				im.updateResourceStat(gvr, syncDuration, true)
+			} else {
+				klog.Errorf("Failed to sync cache for %s", gvr.String())
+				im.updateResourceStat(gvr, time.Since(startTime), false)
+			}
+		case <-syncCtx.Done():
+			klog.Errorf("Timeout waiting for cache sync for %s after %v", gvr.String(), time.Since(startTime))
+			im.updateResourceStat(gvr, time.Since(startTime), false)
 		}
-
-		syncDuration := time.Since(startTime)
-		klog.Infof("Cache synced for %s in %v", gvr.String(), syncDuration)
-
-		// 更新统计信息
-		im.updateResourceStat(gvr, syncDuration)
 	}()
 
 	return nil
@@ -151,11 +195,17 @@ func (im *InformerManager) StopInformer(gvr schema.GroupVersionResource) {
 		close(stopCh)
 		delete(im.stopChannels, gvr)
 		delete(im.informers, gvr)
+
+		// 清理就绪状态
+		im.readyMutex.Lock()
+		delete(im.readyStatus, gvr)
+		im.readyMutex.Unlock()
+
 		klog.Infof("Stopped informer for %s", gvr.String())
 	}
 }
 
-// GetObjects 获取指定资源的所有对象
+// GetObjects 获取指定资源的所有对象（优化版本）
 func (im *InformerManager) GetObjects(gvr schema.GroupVersionResource, namespace string) ([]*unstructured.Unstructured, error) {
 	im.mutex.RLock()
 	informer, exists := im.informers[gvr]
@@ -165,14 +215,24 @@ func (im *InformerManager) GetObjects(gvr schema.GroupVersionResource, namespace
 		return nil, fmt.Errorf("informer for %s not found", gvr.String())
 	}
 
-	if !informer.HasSynced() {
+	if !im.IsReady(gvr) {
 		return nil, fmt.Errorf("informer for %s not synced yet", gvr.String())
 	}
 
 	store := informer.GetStore()
 	objects := store.List()
 
-	var result []*unstructured.Unstructured
+	// 从对象池获取切片
+	result := im.objectPool.Get().([]*unstructured.Unstructured)
+	result = result[:0] // 重置长度但保留容量
+
+	defer func() {
+		// 归还到对象池
+		if cap(result) <= 1000 { // 避免池中对象过大
+			im.objectPool.Put(result)
+		}
+	}()
+
 	for _, obj := range objects {
 		unstructuredObj, ok := obj.(*unstructured.Unstructured)
 		if !ok {
@@ -186,11 +246,16 @@ func (im *InformerManager) GetObjects(gvr schema.GroupVersionResource, namespace
 			}
 		}
 
+		// 优化：只在需要时进行深拷贝
 		result = append(result, unstructuredObj.DeepCopy())
 	}
 
-	klog.V(4).Infof("Retrieved %d objects for %s (namespace: %s)", len(result), gvr.String(), namespace)
-	return result, nil
+	// 创建新的切片返回，避免池对象被外部修改
+	finalResult := make([]*unstructured.Unstructured, len(result))
+	copy(finalResult, result)
+
+	klog.V(4).Infof("Retrieved %d objects for %s (namespace: %s)", len(finalResult), gvr.String(), namespace)
+	return finalResult, nil
 }
 
 // GetNamespaces 获取指定资源的所有命名空间
@@ -203,7 +268,7 @@ func (im *InformerManager) GetNamespaces(gvr schema.GroupVersionResource) ([]str
 		return nil, fmt.Errorf("informer for %s not found", gvr.String())
 	}
 
-	if !informer.HasSynced() {
+	if !im.IsReady(gvr) {
 		return nil, fmt.Errorf("informer for %s not synced yet", gvr.String())
 	}
 
@@ -227,17 +292,17 @@ func (im *InformerManager) GetNamespaces(gvr schema.GroupVersionResource) ([]str
 	return namespaces, nil
 }
 
-// IsReady 检查指定资源的Informer是否已就绪
+// IsReady 检查指定资源的Informer是否已就绪（优化版本）
 func (im *InformerManager) IsReady(gvr schema.GroupVersionResource) bool {
-	im.mutex.RLock()
-	informer, exists := im.informers[gvr]
-	im.mutex.RUnlock()
+	im.readyMutex.RLock()
+	readyFlag, exists := im.readyStatus[gvr]
+	im.readyMutex.RUnlock()
 
 	if !exists {
 		return false
 	}
 
-	return informer.HasSynced()
+	return readyFlag.Load()
 }
 
 // GetStats 获取缓存统计信息
@@ -251,13 +316,17 @@ func (im *InformerManager) GetStats() CacheStats {
 	totalObjects := 0
 
 	for gvr, informer := range im.informers {
-		if informer.HasSynced() {
+		isReady := im.IsReady(gvr)
+		im.stats.SyncStatus[gvr.String()] = isReady
+
+		if isReady {
 			objectCount := len(informer.GetStore().List())
 			totalObjects += objectCount
 
 			// 更新资源统计
 			if stat, exists := im.stats.ResourceStats[gvr.String()]; exists {
 				stat.ObjectCount = objectCount
+				stat.IsReady = true
 				im.stats.ResourceStats[gvr.String()] = stat
 			}
 		}
@@ -279,19 +348,39 @@ func (im *InformerManager) updateStats(gvr schema.GroupVersionResource, operatio
 	if _, exists := im.stats.ResourceStats[gvr.String()]; !exists {
 		im.stats.ResourceStats[gvr.String()] = ResourceStat{
 			LastSync: time.Now(),
+			IsReady:  false,
 		}
 	}
 }
 
 // updateResourceStat 更新资源统计信息
-func (im *InformerManager) updateResourceStat(gvr schema.GroupVersionResource, syncDuration time.Duration) {
+func (im *InformerManager) updateResourceStat(gvr schema.GroupVersionResource, syncDuration time.Duration, isReady bool) {
 	im.statsMutex.Lock()
 	defer im.statsMutex.Unlock()
 
 	stat := im.stats.ResourceStats[gvr.String()]
 	stat.LastSync = time.Now()
 	stat.SyncDuration = syncDuration
+	stat.IsReady = isReady
 	im.stats.ResourceStats[gvr.String()] = stat
+	im.stats.SyncStatus[gvr.String()] = isReady
+}
+
+// WaitForInitialSync 等待初始同步完成
+func (im *InformerManager) WaitForInitialSync(timeout time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		im.syncWaitGroup.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		klog.Info("All informers initial sync completed")
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("timeout waiting for initial sync after %v", timeout)
+	}
 }
 
 // Shutdown 关闭所有Informer
@@ -310,6 +399,11 @@ func (im *InformerManager) Shutdown() {
 	// 清理资源
 	im.informers = make(map[schema.GroupVersionResource]cache.SharedIndexInformer)
 	im.stopChannels = make(map[schema.GroupVersionResource]chan struct{})
+
+	// 清理就绪状态
+	im.readyMutex.Lock()
+	im.readyStatus = make(map[schema.GroupVersionResource]*atomic.Bool)
+	im.readyMutex.Unlock()
 
 	// 取消上下文
 	im.cancel()

@@ -32,10 +32,19 @@ type Server struct {
 	httpServer      *http.Server
 	port            string
 	isReady         atomic.Bool
+
+	// 性能监控相关
+	startTime       time.Time
+	preloadComplete atomic.Bool
 }
 
 // NewServer 创建新的API服务器
 func NewServer(config *rest.Config) (*Server, error) {
+	// 优化客户端配置
+	config.QPS = 100   // 增加QPS限制
+	config.Burst = 200 // 增加突发限制
+	config.Timeout = 30 * time.Second
+
 	// 创建客户端
 	clientset, err := kubernetes.NewForConfig(config)
 	if err != nil {
@@ -63,6 +72,7 @@ func NewServer(config *rest.Config) (*Server, error) {
 		discoveryClient: discoveryClient,
 		strategyManager: strategyManager,
 		port:            "8080",
+		startTime:       time.Now(),
 	}
 
 	// 初始化路由
@@ -74,7 +84,7 @@ func NewServer(config *rest.Config) (*Server, error) {
 		Handler: server.router,
 	}
 
-	// 预加载资源
+	// 异步预加载资源
 	go server.initializeCache()
 
 	return server, nil
@@ -103,14 +113,20 @@ func (s *Server) setupRoutes() {
 		c.Next()
 	})
 
+	// 添加性能监控中间件
+	s.router.Use(s.performanceMiddleware())
+
 	// API路由
 	api := s.router.Group("/api")
 	{
 		api.GET("/crds", s.getCRDs)
 		api.GET("/crds/:group/:version/:resource/objects", s.getResourceObjects)
+		api.GET("/crds/:group/:version/:resource/objects/fast", s.getResourceObjectsFast) // 新增快速接口
 		api.GET("/crds/:group/:version/:resource/namespaces", s.getResourceNamespaces)
 		api.GET("/namespaces", s.getNamespaces)
 		api.GET("/cache/stats", s.getCacheStats)
+		api.GET("/cache/status", s.getCacheStatus)           // 新增缓存状态接口
+		api.GET("/performance/stats", s.getPerformanceStats) // 新增性能统计接口
 	}
 
 	// 健康检查端点
@@ -160,9 +176,29 @@ func (s *Server) setupRoutes() {
 	})
 }
 
-// initializeCache 初始化缓存
+// performanceMiddleware 性能监控中间件
+func (s *Server) performanceMiddleware() gin.HandlerFunc {
+	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
+		// 记录慢请求
+		if param.Latency > 1*time.Second {
+			klog.Warningf("Slow request: %s %s took %v", param.Method, param.Path, param.Latency)
+		}
+
+		return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %#v\n",
+			param.TimeStamp.Format("2006/01/02 - 15:04:05"),
+			param.StatusCode,
+			param.Latency,
+			param.ClientIP,
+			param.Method,
+			param.Path,
+		)
+	})
+}
+
+// initializeCache 初始化缓存（优化版本）
 func (s *Server) initializeCache() {
-	klog.Info("Initializing resource cache...")
+	klog.Info("Starting optimized cache initialization...")
+	startTime := time.Now()
 
 	// 获取所有资源
 	resources, err := s.getAllResources()
@@ -170,6 +206,8 @@ func (s *Server) initializeCache() {
 		klog.Errorf("Failed to get resources for cache initialization: %v", err)
 		return
 	}
+
+	klog.Infof("Found %d resources, starting preload...", len(resources))
 
 	// 转换为ResourceInfo格式
 	var resourceInfos []informer.ResourceInfo
@@ -183,16 +221,77 @@ func (s *Server) initializeCache() {
 		})
 	}
 
-	// 预加载资源
+	// 并行预加载资源
 	if err := s.strategyManager.PreloadResources(resourceInfos); err != nil {
-		klog.Errorf("Failed to preload resources: %v", err)
+		klog.Errorf("Failed to start resource preloading: %v", err)
 		return
 	}
 
-	klog.Info("Resource cache initialization completed")
+	// 等待预加载完成（带超时）
+	preloadTimeout := 60 * time.Second
+	if err := s.strategyManager.WaitForPreloadComplete(preloadTimeout); err != nil {
+		klog.Warningf("Preload timeout: %v, continuing with partial cache", err)
+	}
 
-	// 设置服务就绪状态
+	// 等待核心资源同步完成
+	coreResourcesReady := 0
+	maxWait := 30 * time.Second
+	checkInterval := 500 * time.Millisecond
+	deadline := time.Now().Add(maxWait)
+
+	for time.Now().Before(deadline) {
+		stats := s.strategyManager.GetCacheStats()
+		coreResourcesReady = 0
+
+		// 检查核心资源是否就绪
+		coreResources := []string{
+			"/v1/pods", "/v1/services", "/v1/namespaces",
+			"apps/v1/deployments", "apps/v1/daemonsets", "apps/v1/statefulsets",
+		}
+
+		for _, resource := range coreResources {
+			if ready, exists := stats.SyncStatus[resource]; exists && ready {
+				coreResourcesReady++
+			}
+		}
+
+		if coreResourcesReady >= len(coreResources)/2 { // 至少一半核心资源就绪
+			break
+		}
+
+		time.Sleep(checkInterval)
+	}
+
+	initDuration := time.Since(startTime)
+	klog.Infof("Cache initialization completed in %v, %d/%d core resources ready",
+		initDuration, coreResourcesReady, len([]string{
+			"/v1/pods", "/v1/services", "/v1/namespaces",
+			"apps/v1/deployments", "apps/v1/daemonsets", "apps/v1/statefulsets",
+		}))
+
+	// 标记预加载完成和服务就绪
+	s.preloadComplete.Store(true)
 	s.SetReady(true)
+
+	// 启动后台监控
+	go s.startBackgroundMonitoring()
+}
+
+// startBackgroundMonitoring 启动后台监控
+func (s *Server) startBackgroundMonitoring() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			stats := s.strategyManager.GetCacheStats()
+			readyCount := s.strategyManager.GetReadyResourcesCount()
+
+			klog.V(2).Infof("Cache stats: %d active informers, %d ready resources, %d total objects",
+				stats.ActiveInformers, readyCount, stats.TotalObjects)
+		}
+	}
 }
 
 // SetReady 设置服务就绪状态
@@ -230,7 +329,7 @@ func (s *Server) getResourceObjects(c *gin.Context) {
 		group = ""
 	}
 
-	klog.Infof("Getting objects for resource: %s/%s/%s, namespace: %s", group, version, resource, namespace)
+	klog.V(4).Infof("Getting objects for resource: %s/%s/%s, namespace: %s", group, version, resource, namespace)
 
 	// 构建GVR
 	gvr := schema.GroupVersionResource{
@@ -261,15 +360,16 @@ func (s *Server) getResourceObjects(c *gin.Context) {
 		result = append(result, obj.Object)
 	}
 
-	klog.Infof("Retrieved %d objects for %s from cache", len(result), gvr.String())
+	klog.V(4).Infof("Retrieved %d objects for %s from cache", len(result), gvr.String())
 	c.JSON(http.StatusOK, result)
 }
 
-// getResourceNamespaces 获取资源的命名空间（使用Informer缓存）
-func (s *Server) getResourceNamespaces(c *gin.Context) {
+// getResourceObjectsFast 快速获取资源对象（带降级策略）
+func (s *Server) getResourceObjectsFast(c *gin.Context) {
 	group := c.Param("group")
 	version := c.Param("version")
 	resource := c.Param("resource")
+	namespace := c.Query("namespace")
 
 	// 处理core组
 	if group == "core" {
@@ -291,7 +391,60 @@ func (s *Server) getResourceNamespaces(c *gin.Context) {
 		return
 	}
 
+	// 使用降级策略获取对象
+	objects, err := s.strategyManager.GetObjectsWithFallback(gvr, namespace, namespaced)
+	if err != nil {
+		klog.Errorf("Failed to get objects with fallback: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 转换为JSON格式
+	var result []map[string]interface{}
+	for _, obj := range objects {
+		result = append(result, obj.Object)
+	}
+
+	// 添加加载状态信息
+	response := gin.H{
+		"objects": result,
+		"loading": !s.strategyManager.GetCacheStats().SyncStatus[gvr.String()],
+		"count":   len(result),
+	}
+
+	c.JSON(http.StatusOK, response)
+}
+
+// getResourceNamespaces 获取资源的命名空间（使用Informer缓存）
+func (s *Server) getResourceNamespaces(c *gin.Context) {
+	group := c.Param("group")
+	version := c.Param("version")
+	resource := c.Param("resource")
+
+	// 处理core组
+	if group == "core" {
+		group = ""
+	}
+
+	klog.V(4).Infof("Getting namespaces for resource: %s/%s/%s", group, version, resource)
+
+	// 构建GVR
+	gvr := schema.GroupVersionResource{
+		Group:    group,
+		Version:  version,
+		Resource: resource,
+	}
+
+	// 检查资源是否为命名空间资源
+	namespaced, err := s.isNamespacedResource(gvr)
+	if err != nil {
+		klog.Errorf("Failed to check if resource is namespaced: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	if !namespaced {
+		// 非命名空间资源返回空数组
 		c.JSON(http.StatusOK, []string{})
 		return
 	}
@@ -304,10 +457,7 @@ func (s *Server) getResourceNamespaces(c *gin.Context) {
 		return
 	}
 
-	// 排序命名空间
-	sort.Strings(namespaces)
-
-	klog.Infof("Retrieved %d namespaces for %s from cache", len(namespaces), gvr.String())
+	klog.V(4).Infof("Retrieved %d namespaces for %s from cache", len(namespaces), gvr.String())
 	c.JSON(http.StatusOK, namespaces)
 }
 
@@ -317,9 +467,55 @@ func (s *Server) getCacheStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
+// getCacheStatus 获取缓存状态
+func (s *Server) getCacheStatus(c *gin.Context) {
+	stats := s.strategyManager.GetCacheStats()
+	readyCount := s.strategyManager.GetReadyResourcesCount()
+
+	status := gin.H{
+		"preloadComplete": s.preloadComplete.Load(),
+		"readyResources":  readyCount,
+		"totalInformers":  stats.ActiveInformers,
+		"totalObjects":    stats.TotalObjects,
+		"uptime":          time.Since(s.startTime).String(),
+	}
+
+	c.JSON(http.StatusOK, status)
+}
+
+// getPerformanceStats 获取性能统计
+func (s *Server) getPerformanceStats(c *gin.Context) {
+	stats := s.strategyManager.GetCacheStats()
+
+	// 计算平均同步时间
+	var totalSyncTime time.Duration
+	var syncCount int
+	for _, stat := range stats.ResourceStats {
+		if stat.SyncDuration > 0 {
+			totalSyncTime += stat.SyncDuration
+			syncCount++
+		}
+	}
+
+	var avgSyncTime time.Duration
+	if syncCount > 0 {
+		avgSyncTime = totalSyncTime / time.Duration(syncCount)
+	}
+
+	performance := gin.H{
+		"uptime":          time.Since(s.startTime).String(),
+		"averageSyncTime": avgSyncTime.String(),
+		"totalSyncCount":  syncCount,
+		"cacheHitRate":    "N/A", // 可以后续添加缓存命中率统计
+		"memoryUsage":     "N/A", // 可以后续添加内存使用统计
+	}
+
+	c.JSON(http.StatusOK, performance)
+}
+
 // getNamespaces 获取所有命名空间
 func (s *Server) getNamespaces(c *gin.Context) {
-	namespaces, err := s.clientset.CoreV1().Namespaces().List(c.Request.Context(), metav1.ListOptions{})
+	namespaces, err := s.clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
 		klog.Errorf("Failed to get namespaces: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
