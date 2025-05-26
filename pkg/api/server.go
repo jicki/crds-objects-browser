@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -36,6 +37,16 @@ type Server struct {
 	// 性能监控相关
 	startTime       time.Time
 	preloadComplete atomic.Bool
+
+	// 缓存相关
+	resourcesCache      []Resource
+	resourcesCacheTime  time.Time
+	resourcesCacheMutex sync.RWMutex
+	resourcesCacheTTL   time.Duration
+
+	// 请求去重
+	requestDeduplicator map[string]*sync.Mutex
+	deduplicatorMutex   sync.RWMutex
 }
 
 // NewServer 创建新的API服务器
@@ -67,12 +78,14 @@ func NewServer(config *rest.Config) (*Server, error) {
 	strategyManager := informer.NewStrategyManager(informerManager, strategy)
 
 	server := &Server{
-		clientset:       clientset,
-		dynamicClient:   dynamicClient,
-		discoveryClient: discoveryClient,
-		strategyManager: strategyManager,
-		port:            "8080",
-		startTime:       time.Now(),
+		clientset:           clientset,
+		dynamicClient:       dynamicClient,
+		discoveryClient:     discoveryClient,
+		strategyManager:     strategyManager,
+		port:                "8080",
+		startTime:           time.Now(),
+		resourcesCacheTTL:   5 * time.Minute, // 资源列表缓存5分钟
+		requestDeduplicator: make(map[string]*sync.Mutex),
 	}
 
 	// 初始化路由
@@ -366,9 +379,13 @@ func (s *Server) setupRoutes() {
 // performanceMiddleware 性能监控中间件
 func (s *Server) performanceMiddleware() gin.HandlerFunc {
 	return gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
-		// 记录慢请求
-		if param.Latency > 1*time.Second {
+		// 调整慢请求阈值，避免过多警告
+		slowThreshold := 3 * time.Second
+		if param.Latency > slowThreshold {
 			klog.Warningf("Slow request: %s %s took %v", param.Method, param.Path, param.Latency)
+		} else if param.Latency > 1*time.Second {
+			// 1-3秒的请求记录为info级别
+			klog.V(2).Infof("Moderate request: %s %s took %v", param.Method, param.Path, param.Latency)
 		}
 
 		return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %#v\n",
@@ -462,6 +479,9 @@ func (s *Server) initializeCache() {
 
 	// 启动后台监控
 	go s.startBackgroundMonitoring()
+
+	// 启动定期清理
+	go s.startPeriodicCleanup()
 }
 
 // startBackgroundMonitoring 启动后台监控
@@ -481,6 +501,32 @@ func (s *Server) startBackgroundMonitoring() {
 	}
 }
 
+// startPeriodicCleanup 启动定期清理
+func (s *Server) startPeriodicCleanup() {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			s.cleanupRequestDeduplicator()
+		}
+	}
+}
+
+// cleanupRequestDeduplicator 清理请求去重器
+func (s *Server) cleanupRequestDeduplicator() {
+	s.deduplicatorMutex.Lock()
+	defer s.deduplicatorMutex.Unlock()
+
+	// 清理所有互斥锁，因为它们只是用于短期去重
+	// 长期缓存由其他机制处理
+	if len(s.requestDeduplicator) > 100 {
+		klog.V(4).Infof("Cleaning up request deduplicator, current size: %d", len(s.requestDeduplicator))
+		s.requestDeduplicator = make(map[string]*sync.Mutex)
+	}
+}
+
 // SetReady 设置服务就绪状态
 func (s *Server) SetReady(ready bool) {
 	s.isReady.Store(ready)
@@ -491,8 +537,37 @@ func (s *Server) SetReady(ready bool) {
 	}
 }
 
-// getCRDs 获取所有CRD资源
+// getCRDs 获取所有CRD资源（带缓存）
 func (s *Server) getCRDs(c *gin.Context) {
+	// 检查缓存
+	s.resourcesCacheMutex.RLock()
+	if time.Since(s.resourcesCacheTime) < s.resourcesCacheTTL && len(s.resourcesCache) > 0 {
+		resources := s.resourcesCache
+		s.resourcesCacheMutex.RUnlock()
+		klog.V(4).Infof("Returning cached resources: %d", len(resources))
+		c.JSON(http.StatusOK, resources)
+		return
+	}
+	s.resourcesCacheMutex.RUnlock()
+
+	// 请求去重
+	requestKey := "getAllResources"
+	mutex := s.getOrCreateRequestMutex(requestKey)
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	// 再次检查缓存（可能在等待锁的过程中已被更新）
+	s.resourcesCacheMutex.RLock()
+	if time.Since(s.resourcesCacheTime) < s.resourcesCacheTTL && len(s.resourcesCache) > 0 {
+		resources := s.resourcesCache
+		s.resourcesCacheMutex.RUnlock()
+		klog.V(4).Infof("Returning cached resources after lock: %d", len(resources))
+		c.JSON(http.StatusOK, resources)
+		return
+	}
+	s.resourcesCacheMutex.RUnlock()
+
+	// 获取资源
 	resources, err := s.getAllResources()
 	if err != nil {
 		klog.Errorf("Failed to get CRDs: %v", err)
@@ -500,11 +575,39 @@ func (s *Server) getCRDs(c *gin.Context) {
 		return
 	}
 
-	klog.Infof("Found %d resources", len(resources))
+	// 更新缓存
+	s.resourcesCacheMutex.Lock()
+	s.resourcesCache = resources
+	s.resourcesCacheTime = time.Now()
+	s.resourcesCacheMutex.Unlock()
+
+	klog.V(2).Infof("Found %d resources, cached for %v", len(resources), s.resourcesCacheTTL)
 	c.JSON(http.StatusOK, resources)
 }
 
-// getResourceObjects 获取资源对象（使用Informer缓存）
+// getOrCreateRequestMutex 获取或创建请求互斥锁
+func (s *Server) getOrCreateRequestMutex(key string) *sync.Mutex {
+	s.deduplicatorMutex.RLock()
+	if mutex, exists := s.requestDeduplicator[key]; exists {
+		s.deduplicatorMutex.RUnlock()
+		return mutex
+	}
+	s.deduplicatorMutex.RUnlock()
+
+	s.deduplicatorMutex.Lock()
+	defer s.deduplicatorMutex.Unlock()
+
+	// 双重检查
+	if mutex, exists := s.requestDeduplicator[key]; exists {
+		return mutex
+	}
+
+	mutex := &sync.Mutex{}
+	s.requestDeduplicator[key] = mutex
+	return mutex
+}
+
+// getResourceObjects 获取资源对象（使用Informer缓存，优化版本）
 func (s *Server) getResourceObjects(c *gin.Context) {
 	group := c.Param("group")
 	version := c.Param("version")
@@ -516,8 +619,6 @@ func (s *Server) getResourceObjects(c *gin.Context) {
 		group = ""
 	}
 
-	klog.V(4).Infof("Getting objects for resource: %s/%s/%s, namespace: %s", group, version, resource, namespace)
-
 	// 构建GVR
 	gvr := schema.GroupVersionResource{
 		Group:    group,
@@ -525,8 +626,16 @@ func (s *Server) getResourceObjects(c *gin.Context) {
 		Resource: resource,
 	}
 
-	// 检查资源是否为命名空间资源
-	namespaced, err := s.isNamespacedResource(gvr)
+	// 请求去重
+	requestKey := fmt.Sprintf("objects_%s_%s_%s_%s", group, version, resource, namespace)
+	mutex := s.getOrCreateRequestMutex(requestKey)
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	klog.V(4).Infof("Getting objects for resource: %s/%s/%s, namespace: %s", group, version, resource, namespace)
+
+	// 检查资源是否为命名空间资源（带缓存）
+	namespaced, err := s.isNamespacedResourceCached(gvr)
 	if err != nil {
 		klog.Errorf("Failed to check if resource is namespaced: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -541,8 +650,8 @@ func (s *Server) getResourceObjects(c *gin.Context) {
 		return
 	}
 
-	// 转换为JSON格式
-	var result []map[string]interface{}
+	// 优化：预分配切片容量
+	result := make([]map[string]interface{}, 0, len(objects))
 	for _, obj := range objects {
 		result = append(result, obj.Object)
 	}
@@ -602,7 +711,7 @@ func (s *Server) getResourceObjectsFast(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// getResourceNamespaces 获取资源的命名空间（使用Informer缓存）
+// getResourceNamespaces 获取资源的命名空间（使用Informer缓存，优化版本）
 func (s *Server) getResourceNamespaces(c *gin.Context) {
 	group := c.Param("group")
 	version := c.Param("version")
@@ -613,8 +722,6 @@ func (s *Server) getResourceNamespaces(c *gin.Context) {
 		group = ""
 	}
 
-	klog.V(4).Infof("Getting namespaces for resource: %s/%s/%s", group, version, resource)
-
 	// 构建GVR
 	gvr := schema.GroupVersionResource{
 		Group:    group,
@@ -622,8 +729,16 @@ func (s *Server) getResourceNamespaces(c *gin.Context) {
 		Resource: resource,
 	}
 
-	// 检查资源是否为命名空间资源
-	namespaced, err := s.isNamespacedResource(gvr)
+	// 请求去重
+	requestKey := fmt.Sprintf("namespaces_%s_%s_%s", group, version, resource)
+	mutex := s.getOrCreateRequestMutex(requestKey)
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	klog.V(4).Infof("Getting namespaces for resource: %s/%s/%s", group, version, resource)
+
+	// 检查资源是否为命名空间资源（带缓存）
+	namespaced, err := s.isNamespacedResourceCached(gvr)
 	if err != nil {
 		klog.Errorf("Failed to check if resource is namespaced: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -720,18 +835,24 @@ func (s *Server) getNamespaces(c *gin.Context) {
 
 // getAllResources 获取所有资源（保持原有逻辑）
 func (s *Server) getAllResources() ([]Resource, error) {
-	// ... 保持原有的getAllResources实现
-	// 这里只是为了简化，实际应该保持原有的完整实现
-
 	// 获取API资源列表
 	_, apiResourceLists, err := s.discoveryClient.ServerGroupsAndResources()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get server groups and resources: %v", err)
+		// 处理部分错误，继续获取可用资源
+		if discovery.IsGroupDiscoveryFailedError(err) {
+			klog.Warningf("Some groups were not discoverable: %v", err)
+		} else {
+			return nil, fmt.Errorf("failed to get server groups and resources: %v", err)
+		}
 	}
 
 	var resources []Resource
 
 	for _, apiResourceList := range apiResourceLists {
+		if apiResourceList == nil {
+			continue
+		}
+
 		gv, err := schema.ParseGroupVersion(apiResourceList.GroupVersion)
 		if err != nil {
 			klog.Warningf("Failed to parse group version %s: %v", apiResourceList.GroupVersion, err)
@@ -741,6 +862,22 @@ func (s *Server) getAllResources() ([]Resource, error) {
 		for _, apiResource := range apiResourceList.APIResources {
 			// 跳过子资源
 			if strings.Contains(apiResource.Name, "/") {
+				continue
+			}
+
+			// 跳过不支持list和get操作的资源
+			if !hasVerb(apiResource, "list") || !hasVerb(apiResource, "get") {
+				continue
+			}
+
+			// 跳过已弃用的资源版本
+			if isDeprecatedResource(apiResource.Name, gv.Group, gv.Version) {
+				klog.V(4).Infof("Skipping deprecated resource: %s/%s %s", gv.Group, gv.Version, apiResource.Name)
+				continue
+			}
+
+			// 跳过特殊资源
+			if isSpecialResource(apiResource.Name, gv.Group) {
 				continue
 			}
 
@@ -764,7 +901,102 @@ func (s *Server) getAllResources() ([]Resource, error) {
 		return resources[i].Name < resources[j].Name
 	})
 
+	klog.V(4).Infof("Discovered %d API resources", len(resources))
 	return resources, nil
+}
+
+// hasVerb 检查资源是否支持特定操作
+func hasVerb(r metav1.APIResource, verb string) bool {
+	for _, v := range r.Verbs {
+		if v == verb {
+			return true
+		}
+	}
+	return false
+}
+
+// isDeprecatedResource 检查是否为已弃用的资源版本
+func isDeprecatedResource(name, group, version string) bool {
+	// 已弃用的资源版本映射
+	deprecatedResources := map[string]map[string][]string{
+		"batch": {
+			"v1beta1": {"cronjobs"}, // batch/v1beta1 CronJob 在 v1.21+ 中已弃用，在 v1.25+ 中不可用
+		},
+		"extensions": {
+			"v1beta1": {"deployments", "replicasets", "daemonsets", "ingresses", "podsecuritypolicies"},
+		},
+		"apps": {
+			"v1beta1": {"deployments", "replicasets", "daemonsets", "statefulsets"},
+			"v1beta2": {"deployments", "replicasets", "daemonsets", "statefulsets"},
+		},
+		"networking.k8s.io": {
+			"v1beta1": {"ingresses"}, // 使用 v1 版本
+		},
+		"policy": {
+			"v1beta1": {"podsecuritypolicies"}, // PodSecurityPolicy 已弃用
+		},
+		"apiregistration.k8s.io": {
+			"v1beta1": {"apiservices"}, // 使用 v1 版本
+		},
+		"admissionregistration.k8s.io": {
+			"v1beta1": {"mutatingwebhookconfigurations", "validatingwebhookconfigurations"}, // 使用 v1 版本
+		},
+		"scheduling.k8s.io": {
+			"v1beta1": {"priorityclasses"}, // 使用 v1 版本
+		},
+		"storage.k8s.io": {
+			"v1beta1": {"storageclasses", "volumeattachments"}, // 使用 v1 版本
+		},
+		"rbac.authorization.k8s.io": {
+			"v1beta1": {"roles", "rolebindings", "clusterroles", "clusterrolebindings"}, // 使用 v1 版本
+		},
+	}
+
+	if groupMap, ok := deprecatedResources[group]; ok {
+		if versionList, ok := groupMap[version]; ok {
+			for _, r := range versionList {
+				if r == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+// isSpecialResource 检查是否为特殊资源（需要排除的资源）
+func isSpecialResource(name, group string) bool {
+	specialResources := map[string][]string{
+		"": {
+			"componentstatuses", // 已弃用的ComponentStatus
+			"bindings",          // 特殊绑定资源
+		},
+		"authorization.k8s.io": {
+			"selfsubjectrulesreviews",
+			"subjectaccessreviews",
+			"localsubjectaccessreviews",
+			"selfsubjectaccessreviews",
+		},
+		"authentication.k8s.io": {
+			"tokenreviews",
+		},
+		"metrics.k8s.io": {
+			"pods",
+			"nodes",
+		},
+		"events.k8s.io": {
+			"events", // 避免重复，使用 core/v1 events
+		},
+	}
+
+	if resources, ok := specialResources[group]; ok {
+		for _, r := range resources {
+			if r == name {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // isNamespacedResource 检查资源是否为命名空间资源
@@ -791,6 +1023,24 @@ func (s *Server) isNamespacedResource(gvr schema.GroupVersionResource) (bool, er
 	}
 
 	return false, fmt.Errorf("resource %s not found", gvr.String())
+}
+
+// isNamespacedResourceCached 检查资源是否为命名空间资源（带缓存）
+func (s *Server) isNamespacedResourceCached(gvr schema.GroupVersionResource) (bool, error) {
+	// 使用缓存的资源列表进行查找
+	s.resourcesCacheMutex.RLock()
+	if time.Since(s.resourcesCacheTime) < s.resourcesCacheTTL && len(s.resourcesCache) > 0 {
+		for _, resource := range s.resourcesCache {
+			if resource.Group == gvr.Group && resource.Version == gvr.Version && resource.Name == gvr.Resource {
+				s.resourcesCacheMutex.RUnlock()
+				return resource.Namespaced, nil
+			}
+		}
+	}
+	s.resourcesCacheMutex.RUnlock()
+
+	// 如果缓存中没有找到，回退到原始方法
+	return s.isNamespacedResource(gvr)
 }
 
 // Resource 资源结构
