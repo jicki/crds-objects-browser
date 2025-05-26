@@ -139,6 +139,8 @@
           :header-cell-style="{ background: '#f5f7fa', color: '#606266', fontWeight: 'bold' }"
           :row-style="{ height: '50px' }"
           size="default"
+          table-layout="auto"
+          :flexible="true"
         >
           <el-table-column prop="metadata.name" label="名称" min-width="200" sortable show-overflow-tooltip>
             <template #default="scope">
@@ -152,33 +154,41 @@
           <el-table-column 
             prop="metadata.namespace" 
             label="命名空间" 
-            width="180" 
+            min-width="150" 
             v-if="selectedResource.namespaced" 
             sortable 
             show-overflow-tooltip
           >
             <template #default="scope">
-              <el-tag v-if="scope.row.metadata?.namespace || scope.row.namespace" type="info" size="small" effect="plain">
-                📁 {{ scope.row.metadata?.namespace || scope.row.namespace }}
-              </el-tag>
-              <span v-else class="no-namespace">-</span>
+              <div class="namespace-cell">
+                <el-tag 
+                  v-if="scope.row.metadata?.namespace || scope.row.namespace" 
+                  type="info" 
+                  size="small" 
+                  effect="plain"
+                  class="namespace-tag"
+                >
+                  📁 {{ scope.row.metadata?.namespace || scope.row.namespace }}
+                </el-tag>
+                <span v-else class="no-namespace">-</span>
+              </div>
             </template>
           </el-table-column>
           
-          <el-table-column prop="metadata.creationTimestamp" label="创建时间" width="200" sortable>
+          <el-table-column prop="metadata.creationTimestamp" label="创建时间" min-width="180" sortable>
             <template #default="scope">
               <div class="time-cell">
                 <el-icon class="time-icon"><Clock /></el-icon>
-                <span>{{ formatTime(scope.row.metadata?.creationTimestamp || scope.row.creationTimestamp) }}</span>
+                <span class="time-text">{{ formatTime(scope.row.metadata?.creationTimestamp || scope.row.creationTimestamp) }}</span>
               </div>
             </template>
           </el-table-column>
           
           <!-- 动态状态列 -->
-          <el-table-column label="状态" width="120" align="center">
+          <el-table-column label="状态" min-width="100" align="center">
             <template #default="scope">
               <div v-if="getStatus(scope.row)" class="status-cell">
-                <el-tag :type="getStatusType(scope.row)" size="small" effect="dark">
+                <el-tag :type="getStatusType(scope.row)" size="small" effect="dark" class="status-tag">
                   <el-icon class="status-icon">
                     <component :is="getStatusIcon(scope.row)" />
                   </el-icon>
@@ -193,7 +203,7 @@
           <el-table-column 
             v-if="selectedResource && selectedResource.kind === 'Pod'" 
             label="Request/Limits" 
-            width="280" 
+            min-width="250" 
             align="left"
           >
             <template #default="scope">
@@ -231,7 +241,7 @@
           </el-table-column>
           
           <!-- 操作列 -->
-          <el-table-column label="操作" width="100" align="center" fixed="right">
+          <el-table-column label="操作" width="90" align="center" fixed="right">
             <template #default="scope">
               <el-popover
                 placement="left"
@@ -920,6 +930,14 @@ export default {
 <style>
 .resource-detail {
   padding: 20px;
+  min-height: 100vh;
+  box-sizing: border-box;
+}
+
+@media (max-width: 768px) {
+  .resource-detail {
+    padding: 12px;
+  }
 }
 
 .resource-header {
@@ -969,19 +987,42 @@ export default {
 }
 
 .stats-bar {
-  margin-bottom: 20px;
   display: flex;
   gap: 10px;
   align-items: center;
+  flex-wrap: wrap;
+  min-height: 32px;
+}
+
+@media (max-width: 768px) {
+  .stats-bar {
+    gap: 8px;
+  }
+  
+  .stats-bar .el-tag {
+    font-size: 12px !important;
+    padding: 4px 8px !important;
+  }
 }
 
 .stats-and-search {
   margin-bottom: 20px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   flex-wrap: wrap;
   gap: 15px;
+}
+
+@media (max-width: 1200px) {
+  .stats-and-search {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .search-container {
+    justify-content: flex-end;
+  }
 }
 
 .search-container {
@@ -1040,21 +1081,51 @@ export default {
 .time-cell {
   display: flex;
   align-items: center;
+  gap: 6px;
 }
 
 .time-icon {
   color: #909399;
-  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.time-text {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.namespace-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 32px;
+}
+
+.namespace-tag {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .status-cell {
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 32px;
 }
 
 .status-icon {
   margin-right: 4px;
+  flex-shrink: 0;
+}
+
+.status-tag {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .no-namespace, .no-status {
@@ -1103,6 +1174,48 @@ export default {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+  table-layout: auto;
+}
+
+/* 表格自适应优化 */
+:deep(.el-table__body-wrapper) {
+  overflow-x: auto;
+}
+
+:deep(.el-table .cell) {
+  padding: 8px 12px;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+/* 响应式表格优化 */
+@media (max-width: 1024px) {
+  :deep(.el-table .cell) {
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+  
+  .resource-table {
+    overflow-x: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  :deep(.el-table .cell) {
+    padding: 4px 6px;
+    font-size: 12px;
+  }
+  
+  :deep(.el-table__row) {
+    height: auto !important;
+    min-height: 40px;
+  }
+  
+  .namespace-tag,
+  .status-tag {
+    font-size: 11px !important;
+    padding: 2px 6px !important;
+  }
 }
 
 /* 表格头部样式 */
