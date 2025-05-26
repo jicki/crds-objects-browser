@@ -154,12 +154,12 @@ func (s *Server) setupRoutes() {
 
 	// 前端调试页面
 	s.router.GET("/debug-frontend", func(c *gin.Context) {
-		c.File("./debug-frontend.html")
+		c.File("./test/html/debug-frontend.html")
 	})
 
 	// 前端修复测试页面
 	s.router.GET("/test-fix", func(c *gin.Context) {
-		c.File("./test-frontend-fix.html")
+		c.File("./test/html/test-frontend-fix.html")
 	})
 
 	// 调试页面（放在静态文件服务之前）
