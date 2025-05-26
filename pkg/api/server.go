@@ -288,16 +288,14 @@ func (s *Server) setupRoutes() {
                         statusDiv.innerHTML += '<div class="status warning">📊 如果排序资源数为0，说明前端数据处理有问题</div>';
                         
                         // 提供调试建议
-                        statusDiv.innerHTML += `
-                            <div class="status warning">
-                                <strong>🔧 调试建议:</strong><br>
-                                1. 打开 <a href="/ui/" target="_blank">主页面</a><br>
-                                2. 打开浏览器开发者工具 (F12)<br>
-                                3. 查看控制台中的数据流日志<br>
-                                4. 检查 sortedResources getter 是否被正确调用<br>
-                                5. 检查 store.state.resources 是否有数据
-                            </div>
-                        `;
+                        statusDiv.innerHTML += '<div class="status warning">' +
+                            '<strong>调试建议:</strong><br>' +
+                            '1. 打开 <a href="/ui/" target="_blank">主页面</a><br>' +
+                            '2. 打开浏览器开发者工具 (F12)<br>' +
+                            '3. 查看控制台中的数据流日志<br>' +
+                            '4. 检查 sortedResources getter 是否被正确调用<br>' +
+                            '5. 检查 store.state.resources 是否有数据' +
+                            '</div>';
                     } else {
                         statusDiv.innerHTML += '<div class="status error">❌ 前端页面无法访问</div>';
                     }
