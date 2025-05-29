@@ -301,6 +301,6 @@ crds-objects-browser/
 
 **⭐ 如果这个项目对您有帮助，请给我们一个Star！**
 
-Made with ❤️ by [Your Team](https://github.com/your-org)
+Made with ❤️ by [Your Team](https://github.com/)
 
 </div> 
