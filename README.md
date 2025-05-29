@@ -76,7 +76,7 @@
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/your-org/crds-objects-browser.git
+git clone https://github.com/jicki/crds-objects-browser.git
 cd crds-objects-browser
 ```
 
@@ -160,7 +160,7 @@ go run cmd/server/main.go \
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Vue.js 前端   │────│   Go 后端服务   │────│ Kubernetes API  │
+│   Vue.js 前端    │────│   Go 后端服务    │────│ Kubernetes API  │
 │                 │    │                 │    │                 │
 │ • Element Plus  │    │ • Gin Framework │    │ • client-go     │
 │ • Vuex Store    │    │ • REST API      │    │ • CRD Discovery │
@@ -273,7 +273,7 @@ crds-objects-browser/
 
 如果您发现了bug或有功能建议，请：
 
-1. 检查 [Issues](https://github.com/your-org/crds-browser/issues) 是否已存在相关问题
+1. 检查 [Issues](https://github.com/jicki/crds-browser/issues) 是否已存在相关问题
 2. 创建新的Issue，详细描述问题或建议
 3. 提供复现步骤和环境信息
 
@@ -301,6 +301,6 @@ crds-objects-browser/
 
 **⭐ 如果这个项目对您有帮助，请给我们一个Star！**
 
-Made with ❤️ by [Your Team](https://github.com/)
+Made with ❤️ by [Your Team](https://github.com/jicki/)
 
 </div> 
