@@ -273,7 +273,7 @@ crds-objects-browser/
 
 如果您发现了bug或有功能建议，请：
 
-1. 检查 [Issues](https://github.com/jicki/crds-browser/issues) 是否已存在相关问题
+1. 检查 [Issues](https://github.com/jicki/crds-objects-browser/issues) 是否已存在相关问题
 2. 创建新的Issue，详细描述问题或建议
 3. 提供复现步骤和环境信息
 
